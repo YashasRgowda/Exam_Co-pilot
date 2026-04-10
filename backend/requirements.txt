@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+gunicorn
+supabase
+python-dotenv
+pydantic
+pydantic-settings
+python-multipart
+httpx
+pillow
+google-generativeai
+pytest
+pytest-asyncio
