@@ -1,43 +1,38 @@
-// constants/colors.js
-// All colors used throughout the app
-// Change theme here → affects entire app
-
 const colors = {
-  // Primary brand color — used for buttons, highlights, active states
-  primary: '#6C63FF',
-  primaryLight: '#EEF0FF',
-  primaryDark: '#4B44CC',
+  // Core backgrounds
+  background: '#080810',
+  surface: '#0F0F18',
+  surfaceRaised: '#161622',
+  surfaceHighlight: '#1C1C2E',
 
-  // Background colors
-  background: '#F8F9FE',
-  surface: '#FFFFFF',        // cards, modals
+  // Brand — Royal Red Wine
+  primary: '#C41E3A',
+  primaryBright: '#E8294D',
+  primaryDim: '#3D0914',
+  primaryGlow: 'rgba(196,30,58,0.12)',
 
-  // Text colors
-  textPrimary: '#1A1A2E',    // main headings
-  textSecondary: '#6B7280',  // subtitles, descriptions
-  textMuted: '#9CA3AF',      // placeholders, hints
+  // Neon accents — ONLY for critical info
+  neonGreen: '#00FF87',
+  neonGreenDim: 'rgba(0,255,135,0.08)',
+  neonAmber: '#FFB800',
+  neonAmberDim: 'rgba(255,184,0,0.08)',
+  neonBlue: '#4D9FFF',
+  neonBlueDim: 'rgba(77,159,255,0.08)',
 
-  // Status colors
-  success: '#10B981',
-  successLight: '#ECFDF5',
-  warning: '#F59E0B',
-  warningLight: '#FFFBEB',
-  error: '#EF4444',
-  errorLight: '#FEF2F2',
+  // Text
+  textPrimary: '#F5F5F7',
+  textSecondary: '#72728A',
+  textMuted: '#38384A',
 
-  // Border and dividers
-  border: '#E5E7EB',
-  divider: '#F3F4F6',
-
-  // Checklist specific
-  checked: '#10B981',
-  unchecked: '#D1D5DB',
+  // Borders
+  border: '#1A1A28',
+  borderBright: '#2A2A3E',
 
   // Tab bar
-  tabActive: '#6C63FF',
-  tabInactive: '#9CA3AF',
+  tabActive: '#C41E3A',
+  tabInactive: '#38384A',
+  tabBackground: '#080810',
 
-  // Others
   white: '#FFFFFF',
   black: '#000000',
   transparent: 'transparent',

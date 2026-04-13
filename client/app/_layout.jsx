@@ -61,24 +61,11 @@ export default function RootLayout() {
                     <Stack.Screen name="(tabs)" />
 
                     {/* Exam detail screen */}
-                    <Stack.Screen
-                        name="exam/[id]"
-                        options={{
-                            headerShown: true,
-                            headerTitle: 'Exam Details',
-                            headerBackTitle: 'Back',
-                        }}
-                    />
+                    <Stack.Screen name="exam/[id]" options={{ headerShown: false }} />
 
                     {/* Checklist screen */}
-                    <Stack.Screen
-                        name="exam/checklist/[id]"
-                        options={{
-                            headerShown: true,
-                            headerTitle: 'Checklist',
-                            headerBackTitle: 'Back',
-                        }}
-                    />
+                    <Stack.Screen name="exam/checklist/[id]" options={{ headerShown: false }} />
+
                 </Stack>
             </AuthGuard>
             <StatusBar style="dark" />
