@@ -129,9 +129,22 @@ async def parse_admit_card_route(
         "admit_card_url": admit_card_url,
     }
 
-    exam = supabase_admin.table("exams").insert(exam_payload).execute()
+    # Check if exam with same name already exists for this user
+    # If yes → update it instead of creating a duplicate
+    existing = supabase_admin.table("exams").select("id").eq(
+        "user_id", user_id
+    ).eq("exam_name", exam_payload["exam_name"]).execute()
 
-    logger.info(f"Exam saved for user {user_id}: {parsed_data.get('exam_name')}")
+    if existing.data:
+        # Update existing exam with fresh parsed data
+        exam = supabase_admin.table("exams").update(
+            exam_payload
+        ).eq("id", existing.data[0]["id"]).execute()
+        logger.info(f"Exam updated for user {user_id}: {parsed_data.get('exam_name')}")
+    else:
+        # Insert new exam
+        exam = supabase_admin.table("exams").insert(exam_payload).execute()
+        logger.info(f"Exam saved for user {user_id}: {parsed_data.get('exam_name')}")
 
     return {
         "success": True,

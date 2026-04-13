@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str
 
     # Gemini AI
-    GEMINI_API_KEY: str
+    # GEMINI_API_KEY: str
+    GROQ_API_KEY: str
 
     # Google Maps
     GOOGLE_MAPS_API_KEY: str
