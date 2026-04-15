@@ -61,9 +61,9 @@ async def generate_checklist(
     user_id = user["sub"]
 
     # Verify exam belongs to this user
-    exam = supabase.table("exams").select("id").eq(
-        "id", exam_id
-    ).eq("user_id", user_id).single().execute()
+    exam = supabase_admin.table("exams").select("id").eq(
+    "id", exam_id
+    ).eq("user_id", user_id).execute()
 
     if not exam.data:
         raise NotFoundException("Exam not found.")

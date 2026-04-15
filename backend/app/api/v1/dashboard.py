@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from app.db.database import supabase
+from app.db.database import supabase, supabase_admin
 from app.core.logger import setup_logger
 from app.core.exceptions import NotFoundException
 from app.dependencies import get_current_user
@@ -19,28 +19,40 @@ async def get_dashboard(user: dict = Depends(get_current_user)):
     today = date.today().isoformat()
 
     # Get all upcoming exams
-    upcoming = supabase.table("exams").select("*").eq(
+    upcoming = supabase_admin.table("exams").select("*").eq(
         "user_id", user_id
     ).gte("exam_date", today).order(
         "exam_date", desc=False
     ).execute()
 
     # Get past exams
-    past = supabase.table("exams").select("*").eq(
+    past = supabase_admin.table("exams").select("*").eq(
         "user_id", user_id
     ).lt("exam_date", today).order(
         "exam_date", desc=True
     ).limit(5).execute()
 
-    # Get profile
-    profile = supabase.table("profiles").select(
+    # Get profile — use execute without single() to avoid crash
+    profile_result = supabase_admin.table("profiles").select(
         "full_name, is_premium, phone"
-    ).eq("id", user_id).single().execute()
+    ).eq("id", user_id).execute()
+
+    profile = profile_result.data[0] if profile_result.data else {}
+
+    # Add days_remaining to each upcoming exam
+    upcoming_with_days = []
+    for exam in upcoming.data:
+        try:
+            exam_date = date.fromisoformat(exam["exam_date"])
+            days_remaining = (exam_date - date.today()).days
+            upcoming_with_days.append({**exam, "days_remaining": days_remaining})
+        except Exception:
+            upcoming_with_days.append({**exam, "days_remaining": None})
 
     return {
         "success": True,
-        "profile": profile.data,
-        "upcoming_exams": upcoming.data,
+        "profile": profile,
+        "upcoming_exams": upcoming_with_days,
         "past_exams": past.data,
         "upcoming_count": len(upcoming.data),
     }
@@ -54,36 +66,40 @@ async def get_exam_dashboard(
     """
     Returns complete dashboard for a single exam.
     Includes exam details + checklist + notifications.
-    This is the main screen students see after parsing.
     """
     user_id = user["sub"]
 
-    # Get exam details
-    exam = supabase.table("exams").select("*").eq(
+    # Get exam details — no .single() to avoid crash on 0 rows
+    exam_result = supabase_admin.table("exams").select("*").eq(
         "id", exam_id
-    ).eq("user_id", user_id).single().execute()
+    ).eq("user_id", user_id).execute()
 
-    if not exam.data:
+    if not exam_result.data:
         raise NotFoundException("Exam not found.")
 
+    exam = exam_result.data[0]
+
     # Get checklist for this exam
-    checklist = supabase.table("checklist_items").select("*").eq(
+    checklist = supabase_admin.table("checklist_items").select("*").eq(
         "exam_id", exam_id
     ).eq("user_id", user_id).execute()
 
     # Get notifications for this exam
-    notifications = supabase.table("notifications").select("*").eq(
+    notifications = supabase_admin.table("notifications").select("*").eq(
         "exam_id", exam_id
     ).eq("user_id", user_id).execute()
 
     # Calculate days remaining
-    exam_date = date.fromisoformat(exam.data["exam_date"])
-    today = date.today()
-    days_remaining = (exam_date - today).days
+    days_remaining = None
+    try:
+        exam_date = date.fromisoformat(exam["exam_date"])
+        days_remaining = (exam_date - date.today()).days
+    except Exception:
+        pass
 
     return {
         "success": True,
-        "exam": exam.data,
+        "exam": exam,
         "days_remaining": days_remaining,
         "checklist": checklist.data,
         "checklist_total": len(checklist.data),
