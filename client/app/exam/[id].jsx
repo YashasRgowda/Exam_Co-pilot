@@ -6,11 +6,13 @@ import {
     TouchableOpacity,
     StatusBar,
     Linking,
+    ActivityIndicator,
 } from 'react-native';
 import { useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import useExamStore from '../../store/examStore';
 import colors from '../../constants/colors';
 import typography from '../../constants/typography';
@@ -18,11 +20,50 @@ import typography from '../../constants/typography';
 export default function ExamDetailScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
-    const { fetchExamDashboard, currentExam, currentChecklist, isLoading } = useExamStore();
+    const {
+        fetchExamDashboard,
+        currentExam,
+        currentChecklist,
+        isLoading,
+        navigationData,
+        navigationLoading,
+        navigationError,
+        fetchDirections,
+        clearNavigation,
+    } = useExamStore();
 
     useEffect(() => {
         if (id) fetchExamDashboard(id);
+        return () => clearNavigation();
     }, [id]);
+
+    const handleGetDirections = async () => {
+        try {
+            // Request location permission
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+                alert('Location permission is needed to get directions to your exam center.');
+                return;
+            }
+
+            // Get current GPS coordinates
+            const location = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.High,
+            });
+
+            const { latitude, longitude } = location.coords;
+
+            // Call backend with exam_id + coordinates
+            await fetchDirections(id, latitude, longitude);
+
+        } catch (error) {
+            alert('Could not get your location. Please try again.');
+        }
+    };
+
+    const openLink = (url) => {
+        if (url) Linking.openURL(url);
+    };
 
     if (isLoading || !currentExam) {
         return (
@@ -37,13 +78,8 @@ export default function ExamDetailScreen() {
     const totalCount = currentChecklist.length;
     const progressPercent = totalCount > 0 ? (checkedCount / totalCount) * 100 : 0;
 
-    const openMaps = () => {
-        if (currentExam.center_address) {
-            Linking.openURL(
-                `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(currentExam.center_address)}`
-            );
-        }
-    };
+    const nav = navigationData?.navigation;
+    const links = navigationData?.links;
 
     return (
         <>
@@ -63,14 +99,8 @@ export default function ExamDetailScreen() {
 
                     {/* ── EXAM NAME + STATS ── */}
                     <View style={styles.heroCard}>
-
-                        {/* Exam name */}
                         <Text style={styles.examName}>{currentExam.exam_name}</Text>
-
-                        {/* Thin red accent line */}
                         <View style={styles.heroAccentLine} />
-
-                        {/* Stats row */}
                         <View style={styles.statsBlock}>
                             <View style={styles.statItem}>
                                 <Text style={styles.statBig}>
@@ -82,18 +112,14 @@ export default function ExamDetailScreen() {
                                 </Text>
                                 <Text style={styles.statSub}>DATE</Text>
                             </View>
-
                             <View style={styles.statDivider} />
-
                             <View style={styles.statItem}>
                                 <Text style={styles.statBig}>
                                     {currentExam.reporting_time?.slice(0, 5) ?? '—'}
                                 </Text>
                                 <Text style={styles.statSub}>REPORT BY</Text>
                             </View>
-
                             <View style={styles.statDivider} />
-
                             <View style={styles.statItem}>
                                 <Text style={[styles.statBig, { color: colors.primary }]}>
                                     {currentExam.gate_closing_time?.slice(0, 5) ?? '—'}
@@ -101,31 +127,30 @@ export default function ExamDetailScreen() {
                                 <Text style={styles.statSub}>GATE CLOSES</Text>
                             </View>
                         </View>
-
                     </View>
 
                     {/* ── DETAILS LIST ── */}
                     <View style={styles.detailsCard}>
-
                         <View style={styles.detailItem}>
                             <Text style={styles.detailKey}>Roll Number</Text>
                             <Text style={styles.detailVal}>{currentExam.roll_number ?? '—'}</Text>
                         </View>
-
                         <View style={styles.detailItem}>
                             <Text style={styles.detailKey}>Exam Center</Text>
                             <Text style={styles.detailVal} numberOfLines={2}>
                                 {currentExam.center_name ?? '—'}
                             </Text>
                         </View>
-
                         <View style={styles.detailItemRow}>
                             <View style={styles.detailHalf}>
                                 <Text style={styles.detailKey}>City</Text>
                                 <Text style={styles.detailVal}>{currentExam.center_city ?? '—'}</Text>
                             </View>
                             <View style={styles.detailHalfDivider} />
-                            <TouchableOpacity style={styles.detailHalf} onPress={openMaps}>
+                            <TouchableOpacity
+                                style={styles.detailHalf}
+                                onPress={() => openLink(links?.google_maps || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(currentExam.center_address)}`)}
+                            >
                                 <Text style={styles.detailKey}>Address</Text>
                                 <Text style={[styles.detailVal, { color: colors.textSecondary }]} numberOfLines={2}>
                                     {currentExam.center_address ?? '—'}
@@ -133,54 +158,135 @@ export default function ExamDetailScreen() {
                                 <Text style={styles.detailLink}>Open in Maps →</Text>
                             </TouchableOpacity>
                         </View>
-
                     </View>
 
                     {/* ── GET THERE ── */}
                     <Text style={styles.sectionLabel}>GET THERE</Text>
+
+                    {/* Navigation Stats Card — shown after directions are fetched */}
+                    {nav && (
+                        <View style={styles.navStatsCard}>
+                            <View style={styles.navStatItem}>
+                                <Ionicons name="navigate" size={18} color={colors.primary} />
+                                <Text style={styles.navStatBig}>{nav.distance}</Text>
+                                <Text style={styles.navStatLabel}>DISTANCE</Text>
+                            </View>
+                            <View style={styles.navStatDivider} />
+                            <View style={styles.navStatItem}>
+                                <Ionicons name="time-outline" size={18} color={colors.neonAmber} />
+                                <Text style={[styles.navStatBig, { color: colors.neonAmber }]}>
+                                    {nav.duration_in_traffic}
+                                </Text>
+                                <Text style={styles.navStatLabel}>WITH TRAFFIC</Text>
+                            </View>
+                            <View style={styles.navStatDivider} />
+                            <View style={styles.navStatItem}>
+                                <Ionicons name="car-outline" size={18} color={colors.neonGreen} />
+                                <Text style={[styles.navStatBig, { color: colors.neonGreen }]}>
+                                    {nav.duration}
+                                </Text>
+                                <Text style={styles.navStatLabel}>WITHOUT</Text>
+                            </View>
+                        </View>
+                    )}
+
+                    {/* Navigation error */}
+                    {navigationError && (
+                        <View style={styles.navErrorCard}>
+                            <Ionicons name="warning-outline" size={16} color={colors.neonAmber} />
+                            <Text style={styles.navErrorText}>{navigationError}</Text>
+                        </View>
+                    )}
+
                     <View style={styles.transportGrid}>
 
-                        <TouchableOpacity style={styles.transportMainBtn} onPress={openMaps} activeOpacity={0.85}>
+                        {/* Get Directions button — becomes Open in Maps after fetch */}
+                        <TouchableOpacity
+                            style={styles.transportMainBtn}
+                            onPress={() => nav
+                                ? openLink(links?.google_maps)
+                                : handleGetDirections()
+                            }
+                            activeOpacity={0.85}
+                        >
                             <View style={styles.transportMainLeft}>
                                 <View style={styles.transportMainIcon}>
-                                    <Ionicons name="navigate" size={20} color={colors.white} />
+                                    {navigationLoading ? (
+                                        <ActivityIndicator size="small" color={colors.white} />
+                                    ) : (
+                                        <Ionicons name="navigate" size={20} color={colors.white} />
+                                    )}
                                 </View>
                                 <View>
-                                    <Text style={styles.transportMainTitle}>Open in Maps</Text>
-                                    <Text style={styles.transportMainSub}>{currentExam.center_city ?? 'Exam Center'}</Text>
+                                    <Text style={styles.transportMainTitle}>
+                                        {navigationLoading
+                                            ? 'Getting directions...'
+                                            : nav
+                                                ? 'Open in Google Maps'
+                                                : 'Get Directions'}
+                                    </Text>
+                                    <Text style={styles.transportMainSub}>
+                                        {navigationLoading
+                                            ? 'Checking live traffic'
+                                            : nav
+                                                ? `${nav.distance} · ${nav.duration_in_traffic}`
+                                                : currentExam.center_city ?? 'Exam Center'}
+                                    </Text>
                                 </View>
                             </View>
-                            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                            {!navigationLoading && (
+                                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                            )}
                         </TouchableOpacity>
 
+                        {/* Cab shortcuts — use real coordinates if available */}
                         <View style={styles.transportSmallRow}>
                             <TouchableOpacity
                                 style={styles.transportSmallBtn}
-                                onPress={() => Linking.openURL('https://m.uber.com/ul/')}
+                                onPress={() => openLink(links?.uber || 'https://m.uber.com/ul/')}
                                 activeOpacity={0.85}
                             >
                                 <Text style={styles.transportSmallEmoji}>🚗</Text>
                                 <Text style={styles.transportSmallLabel}>Uber</Text>
+                                {links?.uber && (
+                                    <View style={styles.activeDot} />
+                                )}
                             </TouchableOpacity>
 
                             <TouchableOpacity
                                 style={styles.transportSmallBtn}
-                                onPress={() => Linking.openURL('https://book.olacabs.com/')}
+                                onPress={() => openLink(links?.ola || 'https://book.olacabs.com/')}
                                 activeOpacity={0.85}
                             >
                                 <Text style={styles.transportSmallEmoji}>🛺</Text>
                                 <Text style={styles.transportSmallLabel}>Ola</Text>
+                                {links?.ola && (
+                                    <View style={styles.activeDot} />
+                                )}
                             </TouchableOpacity>
 
                             <TouchableOpacity
                                 style={styles.transportSmallBtn}
-                                onPress={() => Linking.openURL('https://rapido.bike/')}
+                                onPress={() => openLink(links?.rapido || 'https://rapido.bike/')}
                                 activeOpacity={0.85}
                             >
                                 <Text style={styles.transportSmallEmoji}>🏍️</Text>
                                 <Text style={styles.transportSmallLabel}>Rapido</Text>
+                                {links?.rapido && (
+                                    <View style={styles.activeDot} />
+                                )}
                             </TouchableOpacity>
                         </View>
+
+                        {/* Hint text — only shown before directions are fetched */}
+                        {!nav && !navigationLoading && (
+                            <View style={styles.navHintRow}>
+                                <Ionicons name="information-circle-outline" size={13} color={colors.textMuted} />
+                                <Text style={styles.navHintText}>
+                                    Tap "Get Directions" to see live distance and travel time to your exam center
+                                </Text>
+                            </View>
+                        )}
 
                     </View>
 
@@ -193,14 +299,11 @@ export default function ExamDetailScreen() {
                                 onPress={() => router.push(`/exam/checklist/${id}`)}
                                 activeOpacity={0.85}
                             >
-                                {/* Progress ring placeholder — just big number */}
                                 <View style={styles.checklistNumBox}>
                                     <Text style={styles.checklistNum}>{checkedCount}</Text>
                                     <View style={styles.checklistNumDivider} />
                                     <Text style={styles.checklistDen}>{totalCount}</Text>
                                 </View>
-
-                                {/* Info */}
                                 <View style={styles.checklistInfo}>
                                     <Text style={styles.checklistTitle}>
                                         {checkedCount === totalCount
@@ -385,26 +488,6 @@ const styles = StyleSheet.create({
         marginTop: 6,
         letterSpacing: 0.3,
     },
-    addressRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: 13,
-        paddingHorizontal: 16,
-    },
-    addressRight: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        flex: 1,
-        marginLeft: 12,
-        justifyContent: 'flex-end',
-    },
-    rowDivider: {
-        height: 1,
-        backgroundColor: colors.border,
-        marginHorizontal: 16,
-    },
 
     // Section label
     sectionLabel: {
@@ -414,6 +497,63 @@ const styles = StyleSheet.create({
         letterSpacing: 2,
         paddingHorizontal: 20,
         marginBottom: 10,
+    },
+
+    // Navigation stats card
+    navStatsCard: {
+        marginHorizontal: 20,
+        backgroundColor: colors.surface,
+        borderRadius: 16,
+        padding: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: colors.borderBright,
+        borderLeftWidth: 3,
+        borderLeftColor: colors.primary,
+        marginBottom: 10,
+    },
+    navStatItem: {
+        flex: 1,
+        alignItems: 'center',
+        gap: 4,
+    },
+    navStatBig: {
+        fontSize: typography.sm,
+        fontWeight: typography.bold,
+        color: colors.textPrimary,
+        textAlign: 'center',
+    },
+    navStatLabel: {
+        fontSize: 9,
+        fontWeight: typography.bold,
+        color: colors.textMuted,
+        letterSpacing: 1,
+    },
+    navStatDivider: {
+        width: 1,
+        height: 40,
+        backgroundColor: colors.border,
+    },
+
+    // Navigation error
+    navErrorCard: {
+        marginHorizontal: 20,
+        backgroundColor: 'rgba(255,184,0,0.08)',
+        borderRadius: 12,
+        padding: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255,184,0,0.2)',
+        marginBottom: 10,
+    },
+    navErrorText: {
+        fontSize: typography.xs,
+        color: colors.neonAmber,
+        flex: 1,
+        fontWeight: typography.medium,
     },
 
     // Transport
@@ -477,6 +617,26 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: typography.semibold,
         color: colors.textSecondary,
+    },
+    activeDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: colors.neonGreen,
+    },
+
+    // Nav hint
+    navHintRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 6,
+        paddingHorizontal: 4,
+    },
+    navHintText: {
+        fontSize: 11,
+        color: colors.textMuted,
+        flex: 1,
+        lineHeight: 16,
     },
 
     // Checklist
@@ -582,5 +742,10 @@ const styles = StyleSheet.create({
         fontWeight: typography.bold,
         color: colors.primary,
         letterSpacing: 0.5,
+    },
+    rowDivider: {
+        height: 1,
+        backgroundColor: colors.border,
+        marginHorizontal: 16,
     },
 });

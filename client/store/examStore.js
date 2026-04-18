@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import examService from '../services/examService';
 import dashboardService from '../services/dashboardService';
 import checklistService from '../services/checklistService';
+import navigationService from '../services/navigationService';
 
 const useExamStore = create((set, get) => ({
   // ---------------------------------------------------------------
@@ -20,6 +21,9 @@ const useExamStore = create((set, get) => ({
   isLoading: false,
   isUploading: false,      // true while parsing admit card
   error: null,
+  navigationData: null,      // distance, duration, links from backend
+  navigationLoading: false,  // true while fetching directions
+  navigationError: null,     // error if location/API fails
 
   // ---------------------------------------------------------------
   // ACTIONS
@@ -134,6 +138,25 @@ const useExamStore = create((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  // Fetch directions from current location to exam center
+  fetchDirections: async (examId, lat, lng) => {
+    try {
+      set({ navigationLoading: true, navigationError: null });
+      const response = await navigationService.getDirections(examId, lat, lng);
+      set({ navigationData: response, navigationLoading: false });
+      return { success: true, data: response };
+    } catch (error) {
+      const message = error.response?.data?.error || 'Failed to get directions.';
+      set({ navigationError: message, navigationLoading: false });
+      return { success: false, error: message };
+    }
+  },
+
+  // Clear navigation data when leaving exam screen
+  clearNavigation: () => {
+    set({ navigationData: null, navigationError: null });
+  },
 }));
 
 export default useExamStore;
