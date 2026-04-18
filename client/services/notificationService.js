@@ -3,7 +3,7 @@
 // Called after admit card is parsed
 
 import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import apiClient from './api';
 import API from '../constants/api';
 
@@ -19,11 +19,14 @@ Notifications.setNotificationHandler({
 const notificationService = {
 
     // Request permission + get Expo push token
+    // Returns token string or null if permission denied
     registerForPushNotifications: async () => {
         try {
+            // Check existing permission
             const { status: existingStatus } = await Notifications.getPermissionsAsync();
             let finalStatus = existingStatus;
 
+            // Ask if not already granted
             if (existingStatus !== 'granted') {
                 const { status } = await Notifications.requestPermissionsAsync();
                 finalStatus = status;
@@ -34,12 +37,11 @@ const notificationService = {
                 return null;
             }
 
-            const projectId =
-                Constants.expoConfig?.extra?.eas?.projectId ??
-                Constants.easConfig?.projectId ??
-                'exampilot';
+            // Get Expo push token
+            const tokenData = await Notifications.getExpoPushTokenAsync({
+                projectId: 'exampilot',
+            });
 
-            const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
             return tokenData.data;
 
         } catch (error) {
@@ -49,6 +51,7 @@ const notificationService = {
     },
 
     // Register token + exam_id with backend
+    // Backend saves scheduled notification times in DB
     registerExamReminders: async (examId) => {
         try {
             const token = await notificationService.registerForPushNotifications();

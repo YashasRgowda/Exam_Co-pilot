@@ -69,6 +69,15 @@ const useExamStore = create((set, get) => ({
       // After parsing → generate default checklist automatically
       await checklistService.generateChecklist(response.exam.id);
 
+      // Register push notifications for this exam
+      // Done silently — doesn't block the upload flow
+      try {
+        const { default: notificationService } = await import('../services/notificationService');
+        await notificationService.registerExamReminders(response.exam.id);
+      } catch (e) {
+        console.log('Notification registration skipped:', e);
+      }
+
       // Add new exam to top of list
       set((state) => ({
         exams: [response.exam, ...state.exams],
