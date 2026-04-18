@@ -4,8 +4,8 @@ from app.db.database import supabase, supabase_admin
 from app.core.logger import setup_logger
 from app.core.exceptions import BadRequestException, NotFoundException, InternalServerException
 from app.dependencies import get_current_user
-from app.config import settings
 import httpx
+import math
 
 router = APIRouter()
 logger = setup_logger(__name__)
@@ -21,6 +21,19 @@ class GeocodeRequest(BaseModel):
 
 
 # ---------------------------------------------------------------
+# Helper: straight line distance in km (Haversine formula)
+# Used as fallback when OSRM fails
+# ---------------------------------------------------------------
+def haversine_distance(lat1, lng1, lat2, lng2):
+    R = 6371
+    d_lat = math.radians(lat2 - lat1)
+    d_lng = math.radians(lng2 - lng1)
+    a = math.sin(d_lat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(d_lng/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return round(R * c, 1)
+
+
+# ---------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------
 
@@ -30,15 +43,15 @@ async def get_directions(
     user: dict = Depends(get_current_user)
 ):
     """
-    Returns distance, travel time and Google Maps directions
+    Returns distance, travel time and navigation deep links
     from student's current location to exam center.
-    Also updates exam center coordinates in DB if not already set.
+    Uses OpenStreetMap (free, no billing needed).
     """
     user_id = user["sub"]
 
     # Get exam details
     exam = supabase.table("exams").select(
-        "id, center_address, center_name, center_latitude, center_longitude"
+        "id, center_address, center_name, center_city, center_latitude, center_longitude"
     ).eq("id", payload.exam_id).eq("user_id", user_id).single().execute()
 
     if not exam.data:
@@ -48,67 +61,131 @@ async def get_directions(
     dest_lat = exam_data.get("center_latitude")
     dest_lng = exam_data.get("center_longitude")
 
-    # If coordinates not in DB, geocode the address first
+    # If coordinates not in DB, geocode using OpenStreetMap Nominatim (free)
     if not dest_lat or not dest_lng:
-        geocode_url = "https://maps.googleapis.com/maps/api/geocode/json"
-        async with httpx.AsyncClient() as client:
-            geo_response = await client.get(geocode_url, params={
-                "address": exam_data["center_address"],
-                "key": settings.GOOGLE_MAPS_API_KEY,
-            })
-            geo_data = geo_response.json()
 
-        if geo_data["status"] != "OK":
+        # Build fallback queries — from most specific to least
+        queries = []
+        if exam_data.get("center_name") and exam_data.get("center_city"):
+            queries.append(f"{exam_data['center_name']}, {exam_data['center_city']}, India")
+        if exam_data.get("center_address") and exam_data.get("center_city"):
+            queries.append(f"{exam_data['center_address']}, {exam_data['center_city']}, India")
+        if exam_data.get("center_name"):
+            queries.append(f"{exam_data['center_name']}, India")
+        if exam_data.get("center_city"):
+            queries.append(f"{exam_data['center_city']}, India")
+
+        location = None
+        async with httpx.AsyncClient() as client:
+            for query in queries:
+                try:
+                    response = await client.get(
+                        "https://nominatim.openstreetmap.org/search",
+                        params={
+                            "q": query,
+                            "format": "json",
+                            "limit": 1,
+                            "countrycodes": "in",
+                        },
+                        headers={
+                            # Nominatim requires a User-Agent header
+                            "User-Agent": "ExamPilot/1.0 (exam pilot app)"
+                        },
+                        timeout=10.0,
+                    )
+                    results = response.json()
+                    logger.info(f"Nominatim attempt: '{query}' → {len(results)} results")
+
+                    if results:
+                        location = {
+                            "lat": float(results[0]["lat"]),
+                            "lng": float(results[0]["lon"]),
+                        }
+                        logger.info(f"Geocoded successfully: '{query}' → {location}")
+                        break
+                except Exception as e:
+                    logger.warning(f"Nominatim error for '{query}': {e}")
+                    continue
+
+        if not location:
             raise BadRequestException(
                 "Could not find exam center location. Please check the address."
             )
 
-        location = geo_data["results"][0]["geometry"]["location"]
         dest_lat = location["lat"]
         dest_lng = location["lng"]
 
-        # Save coordinates to DB for future use
+        # Save coordinates to DB so we don't geocode again next time
         supabase_admin.table("exams").update({
             "center_latitude": dest_lat,
             "center_longitude": dest_lng,
         }).eq("id", payload.exam_id).execute()
 
-        logger.info(f"Geocoded exam center: {dest_lat}, {dest_lng}")
+        logger.info(f"Saved exam center coordinates: {dest_lat}, {dest_lng}")
 
-    # Get directions from Google Maps Distance Matrix API
-    matrix_url = "https://maps.googleapis.com/maps/api/distancematrix/json"
-    async with httpx.AsyncClient() as client:
-        matrix_response = await client.get(matrix_url, params={
-            "origins": f"{payload.origin_lat},{payload.origin_lng}",
-            "destinations": f"{dest_lat},{dest_lng}",
-            "mode": "driving",
-            "departure_time": "now",
-            "traffic_model": "best_guess",
-            "key": settings.GOOGLE_MAPS_API_KEY,
-        })
-        matrix_data = matrix_response.json()
+    # Get driving distance + duration using OSRM (free, no key needed)
+    distance_text = None
+    duration_text = None
+    duration_in_traffic_text = None
 
-    if matrix_data["status"] != "OK":
-        raise InternalServerException("Failed to get directions. Please try again.")
+    try:
+        async with httpx.AsyncClient() as client:
+            osrm_response = await client.get(
+                f"http://router.project-osrm.org/route/v1/driving/"
+                f"{payload.origin_lng},{payload.origin_lat};"
+                f"{dest_lng},{dest_lat}",
+                params={
+                    "overview": "false",
+                    "steps": "false",
+                },
+                timeout=10.0,
+            )
+            osrm_data = osrm_response.json()
+            logger.info(f"OSRM response code: {osrm_data.get('code')}")
 
-    element = matrix_data["rows"][0]["elements"][0]
+            if osrm_data.get("code") == "Ok":
+                route = osrm_data["routes"][0]
+                distance_meters = route["distance"]
+                duration_seconds = route["duration"]
 
-    if element["status"] != "OK":
-        raise BadRequestException("Could not calculate route to exam center.")
+                # Format distance
+                if distance_meters >= 1000:
+                    distance_text = f"{distance_meters/1000:.1f} km"
+                else:
+                    distance_text = f"{int(distance_meters)} m"
 
-    distance_text = element["distance"]["text"]
-    distance_meters = element["distance"]["value"]
-    duration_text = element["duration"]["text"]
-    duration_seconds = element["duration"]["value"]
+                # Format duration
+                duration_minutes = int(duration_seconds / 60)
+                if duration_minutes >= 60:
+                    hours = duration_minutes // 60
+                    mins = duration_minutes % 60
+                    duration_text = f"{hours} hr {mins} min"
+                else:
+                    duration_text = f"{duration_minutes} min"
 
-    # Duration in traffic if available
-    duration_in_traffic_text = element.get(
-        "duration_in_traffic", {}
-    ).get("text", duration_text)
+                # Add ~20% buffer for traffic estimate
+                traffic_minutes = int(duration_minutes * 1.2)
+                if traffic_minutes >= 60:
+                    hours = traffic_minutes // 60
+                    mins = traffic_minutes % 60
+                    duration_in_traffic_text = f"{hours} hr {mins} min"
+                else:
+                    duration_in_traffic_text = f"{traffic_minutes} min"
 
-    duration_in_traffic_seconds = element.get(
-        "duration_in_traffic", {}
-    ).get("value", duration_seconds)
+    except Exception as e:
+        logger.warning(f"OSRM failed, using haversine fallback: {e}")
+
+    # Fallback to straight line distance if OSRM fails
+    if not distance_text:
+        straight_km = haversine_distance(
+            payload.origin_lat, payload.origin_lng, dest_lat, dest_lng
+        )
+        # Road distance is roughly 1.3x straight line
+        road_km = round(straight_km * 1.3, 1)
+        distance_text = f"~{road_km} km"
+        est_minutes = int((road_km / 40) * 60)  # assume 40 km/h avg speed
+        duration_text = f"~{est_minutes} min"
+        duration_in_traffic_text = f"~{int(est_minutes * 1.3)} min"
 
     # Build Google Maps deep link for navigation
     maps_url = (
@@ -118,7 +195,7 @@ async def get_directions(
         f"&travelmode=driving"
     )
 
-    # Build Uber deep link
+    # Build Uber deep link with real coordinates
     uber_url = (
         f"https://m.uber.com/ul/?action=setPickup"
         f"&pickup=my_location"
@@ -127,7 +204,7 @@ async def get_directions(
         f"&dropoff[nickname]={exam_data['center_name']}"
     )
 
-    # Build Ola deep link
+    # Build Ola deep link with real coordinates
     ola_url = (
         f"https://book.olacabs.com/?lat={payload.origin_lat}"
         f"&lng={payload.origin_lng}"
@@ -135,7 +212,7 @@ async def get_directions(
         f"&drop_lng={dest_lng}"
     )
 
-    # Build Rapido deep link
+    # Build Rapido deep link with real coordinates
     rapido_url = (
         f"https://rapido.bike/?"
         f"pickup_lat={payload.origin_lat}&pickup_lng={payload.origin_lng}"
@@ -152,10 +229,8 @@ async def get_directions(
         },
         "navigation": {
             "distance": distance_text,
-            "distance_meters": distance_meters,
             "duration": duration_text,
             "duration_in_traffic": duration_in_traffic_text,
-            "duration_seconds": duration_in_traffic_seconds,
         },
         "links": {
             "google_maps": maps_url,
@@ -184,7 +259,6 @@ async def get_exam_center_info(
     if not exam.data:
         raise NotFoundException("Exam not found.")
 
-    # Get crowd sourced feedback for this center
     feedback = supabase.table("exam_center_feedback").select(
         "security_strictness, locker_available, parking_available, location_difficulty, entry_gate_tips, additional_tips"
     ).eq("center_address", exam.data["center_address"]).execute()
@@ -197,7 +271,6 @@ async def get_exam_center_info(
             "message": "No feedback yet for this exam center.",
         }
 
-    # Calculate averages
     total = len(feedback.data)
     avg_security = round(
         sum(f["security_strictness"] or 0 for f in feedback.data) / total, 1
