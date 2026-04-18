@@ -1,0 +1,149 @@
+name: ExamPilot CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ---------------------------------------------------------------
+  # BACKEND JOB
+  # Installs Python deps + runs flake8 lint check
+  # ---------------------------------------------------------------
+  backend:
+    name: Backend Lint & Install
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install flake8
+
+      - name: Create dummy .env for CI
+        working-directory: backend
+        run: |
+          cat > .env << EOF
+          SUPABASE_URL=https://dummy.supabase.co
+          SUPABASE_ANON_KEY=dummy_anon_key
+          SUPABASE_SERVICE_ROLE_KEY=dummy_service_key
+          GROQ_API_KEY=dummy_groq_key
+          GOOGLE_MAPS_API_KEY=dummy_maps_key
+          APP_NAME=ExamPilot
+          APP_ENV=ci
+          DEBUG=False
+          EOF
+
+      - name: Run flake8 lint
+        working-directory: backend
+        run: |
+          flake8 app/ \
+            --max-line-length=120 \
+            --exclude=__pycache__,migrations \
+            --ignore=E501,W503,E302,E303,W291,W293,E501 \
+            --count \
+            --statistics
+
+  # ---------------------------------------------------------------
+  # FRONTEND JOB
+  # Installs Node deps + runs expo doctor
+  # ---------------------------------------------------------------
+  frontend:
+    name: Frontend Install & Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: client/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('client/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        working-directory: client
+        run: npm install --legacy-peer-deps
+
+      - name: Install Expo CLI
+        run: npm install -g @expo/cli
+
+      - name: Check Expo config
+        working-directory: client
+        run: npx expo config --type public
+
+      - name: Verify no missing imports
+        working-directory: client
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            
+            function checkFile(filePath) {
+              const content = fs.readFileSync(filePath, 'utf8');
+              const importRegex = /import.*from\s+['\"](\.\.?\/[^'\"]+)['\"];?/g;
+              let match;
+              while ((match = importRegex.exec(content)) !== null) {
+                const importPath = match[1];
+                const dir = path.dirname(filePath);
+                const resolved = path.resolve(dir, importPath);
+                const extensions = ['', '.js', '.jsx', '.ts', '.tsx'];
+                const exists = extensions.some(ext => {
+                  try {
+                    fs.accessSync(resolved + ext);
+                    return true;
+                  } catch { return false; }
+                });
+                if (!exists) {
+                  console.error('Missing import in ' + filePath + ': ' + importPath);
+                  process.exit(1);
+                }
+              }
+            }
+
+            function walkDir(dir) {
+              const files = fs.readdirSync(dir);
+              files.forEach(file => {
+                const fullPath = path.join(dir, file);
+                if (fs.statSync(fullPath).isDirectory() && 
+                    !fullPath.includes('node_modules') && 
+                    !fullPath.includes('.expo')) {
+                  walkDir(fullPath);
+                } else if (file.endsWith('.js') || file.endsWith('.jsx')) {
+                  checkFile(fullPath);
+                }
+              });
+            }
+
+            walkDir('./app');
+            walkDir('./store');
+            walkDir('./services');
+            console.log('All imports verified successfully');
+          "
