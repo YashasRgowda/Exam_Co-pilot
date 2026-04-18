@@ -11,3 +11,4 @@ pillow
 google-generativeai
 pytest
 pytest-asyncio
+apscheduler

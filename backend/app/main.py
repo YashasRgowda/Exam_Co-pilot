@@ -7,8 +7,74 @@ from app.config import settings
 from app.core.logger import setup_logger
 from app.core.exceptions import ExamPilotException
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from datetime import datetime, timezone
+
 logger = setup_logger(__name__)
 
+async def send_due_notifications():
+    """
+    Runs every minute.
+    Checks DB for notifications due to be sent.
+    Fires push notification via Expo Push API and marks as sent.
+    """
+    from app.db.database import supabase_admin
+    from app.api.v1.notifications import send_expo_push
+    import logging
+    log = logging.getLogger("exampilot.scheduler")
+
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Fetch all unsent notifications that are due
+        due = supabase_admin.table("notifications").select(
+            "id, expo_push_token, notification_type, exam_id"
+        ).eq("is_sent", False).lte("scheduled_at", now).execute()
+
+        if not due.data:
+            return
+
+        log.info(f"Found {len(due.data)} due notifications")
+
+        for notif in due.data:
+            # Get exam name for the notification message
+            exam = supabase_admin.table("exams").select(
+                "exam_name, exam_date, reporting_time"
+            ).eq("id", notif["exam_id"]).single().execute()
+
+            if not exam.data:
+                continue
+
+            exam_name = exam.data["exam_name"]
+            reporting_time = exam.data.get("reporting_time", "")[:5] if exam.data.get("reporting_time") else ""
+
+            # Build message based on notification type
+            if notif["notification_type"] == "night_before":
+                title = "Exam Tomorrow! 🎯"
+                body = f"{exam_name} is tomorrow. Pack your bag and keep your admit card ready tonight."
+            elif notif["notification_type"] == "morning_of":
+                title = "Exam Day! ⏰"
+                body = f"Today is your {exam_name}. Report by {reporting_time}. Check your checklist and leave on time!"
+            else:
+                continue
+
+            # Send push notification
+            success = await send_expo_push(
+                token=notif["expo_push_token"],
+                title=title,
+                body=body,
+            )
+
+            if success:
+                # Mark as sent
+                supabase_admin.table("notifications").update({
+                    "is_sent": True,
+                    "sent_at": now,
+                }).eq("id", notif["id"]).execute()
+                log.info(f"Notification sent and marked: {notif['id']}")
+
+    except Exception as e:
+        log.error(f"Scheduler error: {e}")
 
 def create_app() -> FastAPI:
 
@@ -90,6 +156,29 @@ def create_app() -> FastAPI:
     app.include_router(notifications.router, prefix=f"{settings.API_V1_PREFIX}/notifications", tags=["Notifications"])
     app.include_router(feedback.router,      prefix=f"{settings.API_V1_PREFIX}/feedback",      tags=["Feedback"])
     app.include_router(premium.router,       prefix=f"{settings.API_V1_PREFIX}/premium",       tags=["Premium"])
+    
+    # ---------------------------------------------------------------
+    # Background Scheduler
+    # Runs every minute to send due push notifications
+    # ---------------------------------------------------------------
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        send_due_notifications,
+        trigger="interval",
+        minutes=1,
+        id="notification_scheduler",
+        replace_existing=True,
+    )
+
+    @app.on_event("startup")
+    async def start_scheduler():
+        scheduler.start()
+        logger.info("Notification scheduler started")
+
+    @app.on_event("shutdown")
+    async def stop_scheduler():
+        scheduler.shutdown()
+        logger.info("Notification scheduler stopped")
 
     # ---------------------------------------------------------------
     # Health Check Endpoint
