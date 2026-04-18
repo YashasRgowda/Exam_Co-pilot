@@ -69,13 +69,12 @@ const useExamStore = create((set, get) => ({
       // After parsing → generate default checklist automatically
       await checklistService.generateChecklist(response.exam.id);
 
-      // Register push notifications for this exam
-      // Done silently — doesn't block the upload flow
+      // Register push notifications — skipped silently if not supported
       try {
         const { default: notificationService } = await import('../services/notificationService');
-        await notificationService.registerExamReminders(response.exam.id);
+        notificationService.registerExamReminders(response.exam.id).catch(() => {});
       } catch (e) {
-        console.log('Notification registration skipped:', e);
+        // Silently skip — notifications not supported in Expo Go
       }
 
       // Add new exam to top of list
@@ -86,6 +85,9 @@ const useExamStore = create((set, get) => ({
 
       return { success: true, exam: response.exam };
     } catch (error) {
+      console.log('Full error:', JSON.stringify(error?.message));
+      console.log('Error response:', JSON.stringify(error?.response?.data));
+      console.log('Error code:', error?.code);
       const message =
         error.response?.data?.error || 'Failed to parse admit card.';
       set({ error: message, isUploading: false });

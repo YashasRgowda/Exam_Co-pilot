@@ -1,79 +1,58 @@
-// services/notificationService.js
-// Handles Expo push token registration
-// Called after admit card is parsed
+// services/examService.js
+// All exam and admit card related API calls
+// Talks to /api/v1/admit-card/* endpoints
 
-import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
 import apiClient from './api';
 import API from '../constants/api';
 
-// Configure how notifications appear when app is in foreground
-Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-    }),
-});
+const examService = {
 
-const notificationService = {
+  // Upload admit card image/PDF → AI parses it
+  // file object comes from expo-document-picker or expo-image-picker
+  // We use FormData because we are sending a file not JSON
+  parseAdmitCard: async (file) => {
+    const formData = new FormData();
 
-    // Request permission + get Expo push token
-    registerForPushNotifications: async () => {
-        try {
-            const { status: existingStatus } = await Notifications.getPermissionsAsync();
-            let finalStatus = existingStatus;
+    // Append file to form data
+    // name: field name our backend expects
+    // type: mime type of file
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name || 'admit_card.jpg',
+      type: file.mimeType || 'image/jpeg',
+    });
 
-            if (existingStatus !== 'granted') {
-                const { status } = await Notifications.requestPermissionsAsync();
-                finalStatus = status;
-            }
+    const response = await apiClient.post(
+      API.ENDPOINTS.PARSE_ADMIT_CARD,
+      formData,
+      {
+        headers: {
+          // Override Content-Type for file upload
+          // multipart/form-data tells server we are sending a file
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  },
 
-            if (finalStatus !== 'granted') {
-                console.log('Notification permission denied');
-                return null;
-            }
+  // Get all exams for logged in user
+  getAllExams: async () => {
+    const response = await apiClient.get(API.ENDPOINTS.GET_ALL_EXAMS);
+    return response.data;
+  },
 
-            const projectId =
-                Constants.expoConfig?.extra?.eas?.projectId ??
-                Constants.easConfig?.projectId ??
-                'exampilot';
+  // Get single exam by ID
+  getExamById: async (examId) => {
+    const response = await apiClient.get(API.ENDPOINTS.GET_EXAM_BY_ID(examId));
+    return response.data;
+  },
 
-            const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
-            return tokenData.data;
-
-        } catch (error) {
-            console.log('Push token error:', error);
-            return null;
-        }
-    },
-
-    // Register token + exam_id with backend
-    registerExamReminders: async (examId) => {
-        try {
-            const token = await notificationService.registerForPushNotifications();
-
-            if (!token) {
-                console.log('No push token — skipping reminder registration');
-                return { success: false };
-            }
-
-            const response = await apiClient.post(
-                API.ENDPOINTS.REGISTER_PUSH_TOKEN,
-                {
-                    expo_push_token: token,
-                    exam_id: examId,
-                }
-            );
-
-            console.log('Reminders registered:', response.data);
-            return { success: true, data: response.data };
-
-        } catch (error) {
-            console.log('Reminder registration error:', error);
-            return { success: false };
-        }
-    },
+  // Delete an exam
+  deleteExam: async (examId) => {
+    const response = await apiClient.delete(API.ENDPOINTS.DELETE_EXAM(examId));
+    return response.data;
+  },
 };
 
-export default notificationService;
+export default examService;
