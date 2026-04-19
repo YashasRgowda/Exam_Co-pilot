@@ -8,6 +8,8 @@ import examService from '../services/examService';
 import dashboardService from '../services/dashboardService';
 import checklistService from '../services/checklistService';
 import navigationService from '../services/navigationService';
+import offlineStorage from '../utils/offlineStorage';
+import NetInfo from '@react-native-community/netinfo';
 
 const useExamStore = create((set, get) => ({
   // ---------------------------------------------------------------
@@ -24,6 +26,7 @@ const useExamStore = create((set, get) => ({
   navigationData: null,      // distance, duration, links from backend
   navigationLoading: false,  // true while fetching directions
   navigationError: null,     // error if location/API fails
+  isOffline: false,         // true when no internet connection
 
   // ---------------------------------------------------------------
   // ACTIONS
@@ -32,30 +35,70 @@ const useExamStore = create((set, get) => ({
   // Fetch main dashboard (upcoming + past exams + profile)
   fetchDashboard: async () => {
     try {
-      set({ isLoading: true, error: null });
-      const response = await dashboardService.getDashboard();
-      set({ dashboardData: response, isLoading: false });
+        set({ isLoading: true, error: null });
+
+        // Check internet connection
+        const netState = await NetInfo.fetch();
+        const isConnected = netState.isConnected !== false;
+
+        if (!isConnected) {
+            // Load from offline storage
+            const offlineExams = await offlineStorage.getAllExams();
+            const today = new Date().toISOString().split('T')[0];
+            const upcoming = offlineExams.filter(e => e.exam_date >= today);
+            const past = offlineExams.filter(e => e.exam_date < today);
+            set({
+                dashboardData: {
+                    upcoming_exams: upcoming,
+                    past_exams: past,
+                },
+                isOffline: true,
+                isLoading: false,
+            });
+            return;
+        }
+
+        const response = await dashboardService.getDashboard();
+        set({ dashboardData: response, isOffline: false, isLoading: false });
     } catch (error) {
-      set({
-        error: 'Failed to load dashboard.',
-        isLoading: false,
-      });
+        set({ error: 'Failed to load dashboard.', isLoading: false });
     }
   },
 
   // Fetch single exam full details + checklist
   fetchExamDashboard: async (examId) => {
     try {
-      set({ isLoading: true, error: null });
-      const response = await dashboardService.getExamDashboard(examId);
-      set({
-        currentExam: response.exam,
-        currentChecklist: response.checklist,
-        isLoading: false,
-      });
-      return response;
+        set({ isLoading: true, error: null });
+
+        // Check internet connection
+        const netState = await NetInfo.fetch();
+        const isConnected = netState.isConnected !== false;
+
+        if (!isConnected) {
+            // Load from offline storage
+            const offlineExam = await offlineStorage.getExam(examId);
+            const offlineChecklist = await offlineStorage.getChecklist(examId);
+            if (offlineExam) {
+                set({
+                    currentExam: offlineExam,
+                    currentChecklist: offlineChecklist,
+                    isOffline: true,
+                    isLoading: false,
+                });
+                return { exam: offlineExam, checklist: offlineChecklist };
+            }
+        }
+
+        const response = await dashboardService.getExamDashboard(examId);
+        set({
+            currentExam: response.exam,
+            currentChecklist: response.checklist,
+            isOffline: false,
+            isLoading: false,
+        });
+        return response;
     } catch (error) {
-      set({ error: 'Failed to load exam.', isLoading: false });
+        set({ error: 'Failed to load exam.', isLoading: false });
     }
   },
 
@@ -68,6 +111,9 @@ const useExamStore = create((set, get) => ({
 
       // After parsing → generate default checklist automatically
       await checklistService.generateChecklist(response.exam.id);
+
+      // Save exam to offline storage
+      await offlineStorage.saveExam(response.exam);
 
       // Register push notifications — skipped silently if not supported
       try {
@@ -85,9 +131,6 @@ const useExamStore = create((set, get) => ({
 
       return { success: true, exam: response.exam };
     } catch (error) {
-      console.log('Full error:', JSON.stringify(error?.message));
-      console.log('Error response:', JSON.stringify(error?.response?.data));
-      console.log('Error code:', error?.code);
       const message =
         error.response?.data?.error || 'Failed to parse admit card.';
       set({ error: message, isUploading: false });
@@ -103,6 +146,10 @@ const useExamStore = create((set, get) => ({
         currentChecklist: response.items,
         notAllowed: response.not_allowed,
       });
+
+      // Save checklist to offline storage
+      await offlineStorage.saveChecklist(examId, response.items);
+
     } catch (error) {
       set({ error: 'Failed to load checklist.' });
     }

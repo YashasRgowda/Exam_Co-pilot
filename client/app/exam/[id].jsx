@@ -25,6 +25,7 @@ export default function ExamDetailScreen() {
         currentExam,
         currentChecklist,
         isLoading,
+        isOffline,
         navigationData,
         navigationLoading,
         navigationError,
@@ -94,6 +95,16 @@ export default function ExamDetailScreen() {
                     <Text style={styles.headerLabel}>EXAM DETAILS</Text>
                     <View style={{ width: 36 }} />
                 </View>
+
+                {/* ── OFFLINE BANNER ── */}
+                {isOffline && (
+                    <View style={styles.offlineBanner}>
+                        <Ionicons name="cloud-offline-outline" size={14} color={colors.neonAmber} />
+                        <Text style={styles.offlineBannerText}>
+                            Offline mode — showing saved exam data
+                        </Text>
+                    </View>
+                )}
 
                 <ScrollView showsVerticalScrollIndicator={false}>
 
@@ -747,5 +758,26 @@ const styles = StyleSheet.create({
         height: 1,
         backgroundColor: colors.border,
         marginHorizontal: 16,
+    },
+
+    // Offline banner
+    offlineBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: 'rgba(255,184,0,0.08)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,184,0,0.2)',
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        marginHorizontal: 20,
+        marginBottom: 12,
+    },
+    offlineBannerText: {
+        fontSize: typography.xs,
+        color: colors.neonAmber,
+        fontWeight: typography.medium,
+        flex: 1,
     },
 });

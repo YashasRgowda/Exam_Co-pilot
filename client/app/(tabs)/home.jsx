@@ -20,7 +20,7 @@ import { formatDate, getDaysColor } from '../../utils/formatters';
 export default function HomeScreen() {
     const router = useRouter();
     const { user } = useAuthStore();
-    const { dashboardData, fetchDashboard, isLoading } = useExamStore();
+    const { dashboardData, fetchDashboard, isLoading, isOffline } = useExamStore();
     const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => { fetchDashboard(); }, []);
@@ -60,7 +60,15 @@ export default function HomeScreen() {
                         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
                     }
                 >
-                    {/* ── TOP BAR ── */}
+                    {/* ── OFFLINE BANNER ── */}
+                    {isOffline && (
+                        <View style={styles.offlineBanner}>
+                            <Ionicons name="cloud-offline-outline" size={14} color={colors.neonAmber} />
+                            <Text style={styles.offlineBannerText}>
+                                You're offline — showing saved exam data
+                            </Text>
+                        </View>
+                    )}
                     <View style={styles.topBar}>
                         <View>
                             <Text style={styles.greetingSmall}>{getGreeting()}, {firstName}</Text>
@@ -514,5 +522,26 @@ const styles = StyleSheet.create({
     examDaysText: {
         fontSize: typography.sm,
         fontWeight: typography.bold,
+    },
+
+    // Offline banner
+    offlineBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: 'rgba(255,184,0,0.08)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,184,0,0.2)',
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        marginHorizontal: 20,
+        marginBottom: 12,
+    },
+    offlineBannerText: {
+        fontSize: typography.xs,
+        color: colors.neonAmber,
+        fontWeight: typography.medium,
+        flex: 1,
     },
 });

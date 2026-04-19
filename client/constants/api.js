@@ -5,7 +5,7 @@
 const API = {
   // Your FastAPI backend running locally
   // When testing on simulator, localhost works fine
-  BASE_URL: 'http://192.168.0.6:8000',
+  BASE_URL: 'http://192.168.0.3:8000',
 
   // All API endpoint paths
   ENDPOINTS: {
