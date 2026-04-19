@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from app.db.database import supabase
+from app.db.database import supabase, supabase_admin
 from app.core.logger import setup_logger
 from app.core.exceptions import BadRequestException, InternalServerException
 from app.dependencies import get_current_user
+from fastapi import UploadFile, File
+import uuid
 
 router = APIRouter()
 logger = setup_logger(__name__)
@@ -118,3 +120,104 @@ async def update_profile(
     except Exception as e:
         logger.error(f"Failed to update profile: {e}")
         raise InternalServerException()
+    
+@router.post("/upload-avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Uploads profile picture to Supabase Storage.
+    Updates avatar_url in profiles table.
+    Returns the public URL of the uploaded image.
+    """
+    user_id = user["sub"]
+
+    # Validate file type
+    allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
+    if file.content_type not in allowed_types:
+        raise BadRequestException("Only JPG, PNG and WebP images allowed.")
+
+    # Read file bytes
+    file_bytes = await file.read()
+
+    # Max 5MB for profile pics
+    if len(file_bytes) > 5 * 1024 * 1024:
+        raise BadRequestException("Image too large. Maximum size is 5MB.")
+
+    # Generate unique file path — user_id/uuid.ext
+    ext = file.content_type.split("/")[-1]
+    file_path = f"{user_id}/{uuid.uuid4()}.{ext}"
+
+    try:
+        # Delete old avatar if exists
+        try:
+            old_profile = supabase_admin.table("profiles").select(
+                "avatar_url"
+            ).eq("id", user_id).single().execute()
+
+            if old_profile.data and old_profile.data.get("avatar_url"):
+                # Extract old file path from URL
+                old_url = old_profile.data["avatar_url"]
+                old_path = old_url.split("/avatars/")[-1]
+                supabase_admin.storage.from_("avatars").remove([old_path])
+        except Exception:
+            pass  # No old avatar — that's fine
+
+        # Upload new avatar
+        supabase_admin.storage.from_("avatars").upload(
+            path=file_path,
+            file=file_bytes,
+            file_options={"content-type": file.content_type},
+        )
+
+        # Get public URL
+        avatar_url = supabase_admin.storage.from_("avatars").get_public_url(file_path)
+
+        # Update profile with new avatar URL
+        supabase_admin.table("profiles").update({
+            "avatar_url": avatar_url,
+        }).eq("id", user_id).execute()
+
+        logger.info(f"Avatar uploaded for user {user_id}")
+
+        return {
+            "success": True,
+            "avatar_url": avatar_url,
+        }
+
+    except Exception as e:
+        logger.error(f"Avatar upload failed: {e}")
+        raise InternalServerException("Failed to upload avatar. Please try again.")
+
+
+@router.delete("/delete-avatar")
+async def delete_avatar(user: dict = Depends(get_current_user)):
+    """
+    Deletes profile picture from Supabase Storage.
+    Clears avatar_url in profiles table.
+    """
+    user_id = user["sub"]
+
+    try:
+        profile = supabase_admin.table("profiles").select(
+            "avatar_url"
+        ).eq("id", user_id).single().execute()
+
+        if profile.data and profile.data.get("avatar_url"):
+            old_url = profile.data["avatar_url"]
+            old_path = old_url.split("/avatars/")[-1]
+            supabase_admin.storage.from_("avatars").remove([old_path])
+
+        supabase_admin.table("profiles").update({
+            "avatar_url": None,
+        }).eq("id", user_id).execute()
+
+        return {
+            "success": True,
+            "message": "Avatar deleted successfully.",
+        }
+
+    except Exception as e:
+        logger.error(f"Avatar delete failed: {e}")
+        raise InternalServerException("Failed to delete avatar.")

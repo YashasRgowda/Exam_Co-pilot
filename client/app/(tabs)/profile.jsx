@@ -6,21 +6,174 @@ import {
     TouchableOpacity,
     StatusBar,
     Alert,
+    TextInput,
+    Image,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useState, useEffect } from 'react';
+import * as ImagePicker from 'expo-image-picker';
 import useAuthStore from '../../store/authStore';
+import useExamStore from '../../store/examStore';
+import offlineStorage from '../../utils/offlineStorage';
+import authService from '../../services/authService';
 import colors from '../../constants/colors';
 import typography from '../../constants/typography';
 
 export default function ProfileScreen() {
     const router = useRouter();
-    const { user, logout } = useAuthStore();
+    const { user, logout, uploadAvatar, deleteAvatar, updateUser } = useAuthStore();
+    const { dashboardData } = useExamStore();
+
+    const [editingName, setEditingName] = useState(false);
+    const [nameInput, setNameInput] = useState(user?.full_name || '');
+    const [savingName, setSavingName] = useState(false);
+    const [uploadingAvatar, setUploadingAvatar] = useState(false);
+    const [clearingData, setClearingData] = useState(false);
 
     const firstName = user?.full_name?.split(' ')[0] || 'Student';
     const phone = user?.phone ? `+91 ${user.phone}` : '—';
     const isPremium = user?.is_premium || false;
+    const avatarUrl = user?.avatar_url || null;
+
+    // Live exam data from dashboard
+    const upcomingExams = dashboardData?.upcoming_exams || [];
+    const upcomingCount = upcomingExams.length;
+    const pastCount = dashboardData?.past_exams?.length || 0;
+    const totalCount = upcomingCount + pastCount;
+
+    // Parse limit
+    const dailyLimit = isPremium ? 20 : 3;
+    const parsesUsed = user?.daily_parse_count || 0;
+    const parsesLeft = Math.max(0, dailyLimit - parsesUsed);
+    const parsePercent = Math.min(100, (parsesUsed / dailyLimit) * 100);
+
+    const handleSaveName = async () => {
+        if (!nameInput.trim()) return;
+        try {
+            setSavingName(true);
+            await authService.updateProfile(nameInput.trim());
+            updateUser({ ...user, full_name: nameInput.trim() });
+            setEditingName(false);
+        } catch {
+            Alert.alert('Error', 'Failed to update name.');
+        } finally {
+            setSavingName(false);
+        }
+    };
+
+    const handleAvatarPress = () => {
+        Alert.alert(
+            'Profile Photo',
+            'Choose an option',
+            [
+                {
+                    text: 'Take Photo',
+                    onPress: handleTakePhoto,
+                },
+                {
+                    text: 'Choose from Library',
+                    onPress: handlePickImage,
+                },
+                avatarUrl ? {
+                    text: 'Remove Photo',
+                    style: 'destructive',
+                    onPress: handleDeleteAvatar,
+                } : null,
+                { text: 'Cancel', style: 'cancel' },
+            ].filter(Boolean)
+        );
+    };
+
+    const handlePickImage = async () => {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+            Alert.alert('Permission needed', 'Please allow photo access.');
+            return;
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+        });
+        if (!result.canceled && result.assets[0]) {
+            await handleUploadAvatar(result.assets[0]);
+        }
+    };
+
+    const handleTakePhoto = async () => {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+            Alert.alert('Permission needed', 'Please allow camera access.');
+            return;
+        }
+        const result = await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+        });
+        if (!result.canceled && result.assets[0]) {
+            await handleUploadAvatar(result.assets[0]);
+        }
+    };
+
+    const handleUploadAvatar = async (asset) => {
+        try {
+            setUploadingAvatar(true);
+            const file = {
+                uri: asset.uri,
+                name: 'avatar.jpg',
+                mimeType: 'image/jpeg',
+            };
+            const result = await uploadAvatar(file);
+            if (!result.success) {
+                Alert.alert('Error', 'Failed to upload photo.');
+            }
+        } catch {
+            Alert.alert('Error', 'Failed to upload photo.');
+        } finally {
+            setUploadingAvatar(false);
+        }
+    };
+
+    const handleDeleteAvatar = async () => {
+        try {
+            setUploadingAvatar(true);
+            await deleteAvatar();
+        } catch {
+            Alert.alert('Error', 'Failed to remove photo.');
+        } finally {
+            setUploadingAvatar(false);
+        }
+    };
+
+    const handleClearOfflineData = async () => {
+        Alert.alert(
+            'Clear Offline Data',
+            'This will remove all saved exam data from this device. You\'ll need internet to reload it.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Clear',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            setClearingData(true);
+                            await offlineStorage.clearAll();
+                            Alert.alert('Done', 'Offline data cleared successfully.');
+                        } catch {
+                            Alert.alert('Error', 'Failed to clear data.');
+                        } finally {
+                            setClearingData(false);
+                        }
+                    },
+                },
+            ]
+        );
+    };
 
     const handleLogout = () => {
         Alert.alert(
@@ -52,19 +205,87 @@ export default function ProfileScreen() {
                         <Text style={styles.headerBig}>Profile</Text>
                     </View>
 
-                    {/* ── AVATAR + NAME ── */}
+                    {/* ── AVATAR + NAME CARD ── */}
                     <View style={styles.avatarCard}>
-                        <View style={styles.avatarCircle}>
-                            <Text style={styles.avatarLetter}>
-                                {firstName.charAt(0).toUpperCase()}
-                            </Text>
-                        </View>
+
+                        {/* Avatar */}
+                        <TouchableOpacity
+                            style={styles.avatarWrapper}
+                            onPress={handleAvatarPress}
+                            activeOpacity={0.85}
+                        >
+                            {uploadingAvatar ? (
+                                <View style={styles.avatarCircle}>
+                                    <ActivityIndicator color={colors.primary} />
+                                </View>
+                            ) : avatarUrl ? (
+                                <Image
+                                    source={{ uri: avatarUrl }}
+                                    style={styles.avatarImage}
+                                />
+                            ) : (
+                                <View style={styles.avatarCircle}>
+                                    <Text style={styles.avatarLetter}>
+                                        {firstName.charAt(0).toUpperCase()}
+                                    </Text>
+                                </View>
+                            )}
+                            <View style={styles.avatarEditBadge}>
+                                <Ionicons name="camera" size={11} color={colors.white} />
+                            </View>
+                        </TouchableOpacity>
+
+                        {/* Name + phone */}
                         <View style={styles.avatarInfo}>
-                            <Text style={styles.avatarName}>
-                                {user?.full_name || 'Student'}
-                            </Text>
+                            {editingName ? (
+                                <View style={styles.nameEditRow}>
+                                    <TextInput
+                                        style={styles.nameInput}
+                                        value={nameInput}
+                                        onChangeText={setNameInput}
+                                        autoFocus
+                                        placeholder="Your name"
+                                        placeholderTextColor={colors.textMuted}
+                                        returnKeyType="done"
+                                        onSubmitEditing={handleSaveName}
+                                    />
+                                    <TouchableOpacity
+                                        style={styles.nameSaveBtn}
+                                        onPress={handleSaveName}
+                                        disabled={savingName}
+                                    >
+                                        {savingName ? (
+                                            <ActivityIndicator size="small" color={colors.white} />
+                                        ) : (
+                                            <Ionicons name="checkmark" size={16} color={colors.white} />
+                                        )}
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={styles.nameCancelBtn}
+                                        onPress={() => {
+                                            setEditingName(false);
+                                            setNameInput(user?.full_name || '');
+                                        }}
+                                    >
+                                        <Ionicons name="close" size={16} color={colors.textMuted} />
+                                    </TouchableOpacity>
+                                </View>
+                            ) : (
+                                <TouchableOpacity
+                                    style={styles.nameRow}
+                                    onPress={() => setEditingName(true)}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={styles.avatarName}>
+                                        {user?.full_name || 'Tap to add name'}
+                                    </Text>
+                                    <Ionicons name="pencil" size={13} color={colors.textMuted} />
+                                </TouchableOpacity>
+                            )}
                             <Text style={styles.avatarPhone}>{phone}</Text>
                         </View>
+
+                        {/* Premium badge */}
                         {isPremium && (
                             <View style={styles.premiumBadge}>
                                 <Text style={styles.premiumText}>PRO</Text>
@@ -72,10 +293,134 @@ export default function ProfileScreen() {
                         )}
                     </View>
 
-                    {/* ── ACCOUNT INFO ── */}
+                    {/* ── YOUR EXAMS ── */}
+                    <Text style={styles.sectionLabel}>YOUR EXAMS</Text>
+
+                    {upcomingExams.length === 0 ? (
+                        <View style={styles.noExamCard}>
+                            <Ionicons name="calendar-outline" size={24} color={colors.textMuted} />
+                            <Text style={styles.noExamTitle}>No upcoming exams</Text>
+                            <Text style={styles.noExamSub}>Upload your admit card to get started</Text>
+                        </View>
+                    ) : (
+                        <View style={styles.examsList}>
+                            {upcomingExams.map((exam) => {
+                                const days = exam.days_remaining;
+                                const isUrgent = days <= 7;
+                                const isSoon = days > 7 && days <= 15;
+                                const accentColor = isUrgent
+                                    ? colors.primary
+                                    : isSoon
+                                        ? colors.neonAmber
+                                        : colors.neonGreen;
+
+                                const details = [
+                                    exam.exam_date
+                                        ? new Date(exam.exam_date).toLocaleDateString('en-IN', {
+                                            day: 'numeric', month: 'short'
+                                        })
+                                        : null,
+                                    exam.reporting_time
+                                        ? exam.reporting_time.slice(0, 5)
+                                        : null,
+                                    exam.center_city || null,
+                                ].filter(Boolean).join('  ·  ');
+
+                                return (
+                                    <TouchableOpacity
+                                        key={exam.id}
+                                        style={styles.examCleanCard}
+                                        onPress={() => router.push(`/exam/${exam.id}`)}
+                                        activeOpacity={0.82}
+                                    >
+                                        {/* Left accent */}
+                                        <View style={[styles.examCleanAccent, { backgroundColor: accentColor }]} />
+
+                                        {/* Content */}
+                                        <View style={styles.examCleanContent}>
+                                            <Text style={styles.examCleanName} numberOfLines={1}>
+                                                {exam.exam_name}
+                                            </Text>
+                                            <Text style={styles.examCleanDetails} numberOfLines={1}>
+                                                {details}
+                                            </Text>
+                                        </View>
+
+                                        {/* Days */}
+                                        <View style={styles.examCleanDaysBox}>
+                                            <Text style={[styles.examCleanDaysNum, { color: accentColor }]}>
+                                                {days}
+                                            </Text>
+                                            <Text style={[styles.examCleanDaysLabel, { color: accentColor }]}>
+                                                {days === 1 ? 'day' : 'days'}
+                                            </Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    )}
+
+                    {/* ── DAILY USAGE ── */}
+                    <Text style={styles.sectionLabel}>TODAY'S USAGE</Text>
+                    <View style={styles.usageCard}>
+                        <View style={styles.usageTop}>
+                            <View style={styles.usageLeft}>
+                                <Ionicons name="scan-outline" size={16} color={colors.primary} />
+                                <Text style={styles.usageTitle}>AI Parses</Text>
+                            </View>
+                            <Text style={styles.usageCount}>
+                                <Text style={styles.usageUsed}>{parsesUsed}</Text>
+                                <Text style={styles.usageTotal}> / {dailyLimit}</Text>
+                            </Text>
+                        </View>
+                        <View style={styles.usageTrack}>
+                            <View style={[
+                                styles.usageFill,
+                                {
+                                    width: `${parsePercent}%`,
+                                    backgroundColor: parsePercent >= 100
+                                        ? colors.primary
+                                        : parsePercent >= 60
+                                            ? colors.neonAmber
+                                            : colors.neonGreen,
+                                }
+                            ]} />
+                        </View>
+                        <Text style={styles.usageHint}>
+                            {parsesLeft === 0
+                                ? 'Daily limit reached — resets at midnight'
+                                : `${parsesLeft} parse${parsesLeft === 1 ? '' : 's'} remaining today`}
+                        </Text>
+                    </View>
+
+                    {/* ── DATA & STORAGE ── */}
+                    <Text style={styles.sectionLabel}>DATA & STORAGE</Text>
+                    <View style={styles.menuCard}>
+                        <TouchableOpacity
+                            style={styles.menuRow}
+                            onPress={handleClearOfflineData}
+                            activeOpacity={0.85}
+                            disabled={clearingData}
+                        >
+                            <View style={[styles.menuIcon, { backgroundColor: colors.neonBlueDim }]}>
+                                {clearingData ? (
+                                    <ActivityIndicator size="small" color={colors.neonBlue} />
+                                ) : (
+                                    <Ionicons name="trash-outline" size={16} color={colors.neonBlue} />
+                                )}
+                            </View>
+                            <View style={styles.menuInfo}>
+                                <Text style={styles.menuLabel}>Clear Offline Data</Text>
+                                <Text style={styles.menuValue}>Remove saved exam data from device</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* ── ACCOUNT ── */}
                     <Text style={styles.sectionLabel}>ACCOUNT</Text>
                     <View style={styles.menuCard}>
-
                         <View style={styles.menuRow}>
                             <View style={[styles.menuIcon, { backgroundColor: colors.primaryGlow }]}>
                                 <Ionicons name="call-outline" size={16} color={colors.primary} />
@@ -85,9 +430,7 @@ export default function ProfileScreen() {
                                 <Text style={styles.menuValue}>{phone}</Text>
                             </View>
                         </View>
-
                         <View style={styles.menuDivider} />
-
                         <View style={styles.menuRow}>
                             <View style={[styles.menuIcon, { backgroundColor: colors.neonGreenDim }]}>
                                 <Ionicons name="shield-checkmark-outline" size={16} color={colors.neonGreen} />
@@ -95,65 +438,21 @@ export default function ProfileScreen() {
                             <View style={styles.menuInfo}>
                                 <Text style={styles.menuLabel}>Plan</Text>
                                 <Text style={styles.menuValue}>
-                                    {isPremium ? 'Premium' : 'Free — 3 parses/day'}
+                                    {isPremium ? '✨ Premium — 20 parses/day' : 'Free — 3 parses/day'}
                                 </Text>
                             </View>
                         </View>
-
                     </View>
 
-                    {/* ── APP INFO ── */}
-                    <Text style={styles.sectionLabel}>APP</Text>
-                    <View style={styles.menuCard}>
-
-                        <TouchableOpacity style={styles.menuRow} activeOpacity={0.85}>
-                            <View style={[styles.menuIcon, { backgroundColor: colors.neonBlueDim }]}>
-                                <Ionicons name="information-circle-outline" size={16} color={colors.neonBlue} />
-                            </View>
-                            <View style={styles.menuInfo}>
-                                <Text style={styles.menuLabel}>Version</Text>
-                                <Text style={styles.menuValue}>1.0.0</Text>
-                            </View>
-                            <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
-                        </TouchableOpacity>
-
-                        <View style={styles.menuDivider} />
-
-                        <TouchableOpacity style={styles.menuRow} activeOpacity={0.85}>
-                            <View style={[styles.menuIcon, { backgroundColor: colors.neonAmberDim }]}>
-                                <Ionicons name="star-outline" size={16} color={colors.neonAmber} />
-                            </View>
-                            <View style={styles.menuInfo}>
-                                <Text style={styles.menuLabel}>Rate ExamPilot</Text>
-                                <Text style={styles.menuValue}>Leave a review</Text>
-                            </View>
-                            <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
-                        </TouchableOpacity>
-
-                        <View style={styles.menuDivider} />
-
-                        <TouchableOpacity style={styles.menuRow} activeOpacity={0.85}>
-                            <View style={[styles.menuIcon, { backgroundColor: colors.surfaceHighlight }]}>
-                                <Ionicons name="chatbubble-outline" size={16} color={colors.textSecondary} />
-                            </View>
-                            <View style={styles.menuInfo}>
-                                <Text style={styles.menuLabel}>Send Feedback</Text>
-                                <Text style={styles.menuValue}>Help us improve</Text>
-                            </View>
-                            <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
-                        </TouchableOpacity>
-
-                    </View>
-
-                    {/* ── UPGRADE BANNER (free users only) ── */}
+                    {/* ── UPGRADE BANNER ── */}
                     {!isPremium && (
                         <>
                             <Text style={styles.sectionLabel}>UPGRADE</Text>
                             <View style={styles.upgradeCard}>
                                 <View style={styles.upgradeLeft}>
-                                    <Text style={styles.upgradeTitle}>Go Premium</Text>
+                                    <Text style={styles.upgradeTitle}>✨ Go Premium</Text>
                                     <Text style={styles.upgradeSub}>
-                                        20 parses/day · Priority support · No limits
+                                        20 parses/day · AI Doubt Assistant · Smart Alerts
                                     </Text>
                                 </View>
                                 <TouchableOpacity style={styles.upgradeBtn} activeOpacity={0.85}>
@@ -173,9 +472,7 @@ export default function ProfileScreen() {
                         <Text style={styles.logoutText}>Logout</Text>
                     </TouchableOpacity>
 
-                    {/* Footer */}
                     <Text style={styles.footer}>ExamPilot · Never miss your exam again</Text>
-
                     <View style={{ height: 40 }} />
                 </ScrollView>
             </SafeAreaView>
@@ -211,39 +508,95 @@ const styles = StyleSheet.create({
         marginHorizontal: 20,
         backgroundColor: colors.surface,
         borderRadius: 18,
-        padding: 18,
+        padding: 20,
         flexDirection: 'row',
         alignItems: 'center',
         gap: 16,
         borderWidth: 1,
         borderColor: colors.border,
-        borderLeftWidth: 3,
-        borderLeftColor: colors.primary,
         marginBottom: 24,
     },
+    avatarWrapper: {
+        position: 'relative',
+    },
     avatarCircle: {
-        width: 52,
-        height: 52,
-        borderRadius: 26,
+        width: 64,
+        height: 64,
+        borderRadius: 32,
         backgroundColor: colors.primaryDim,
-        borderWidth: 2,
-        borderColor: colors.primary,
+        borderWidth: 1.5,
+        borderColor: colors.borderBright,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    avatarImage: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        borderWidth: 1.5,
+        borderColor: colors.borderBright,
     },
     avatarLetter: {
         fontSize: typography.xl,
         fontWeight: typography.black,
         color: colors.primary,
     },
+    avatarEditBadge: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        backgroundColor: colors.surfaceHighlight,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1.5,
+        borderColor: colors.border,
+    },
     avatarInfo: {
         flex: 1,
+        gap: 4,
+    },
+    nameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
     },
     avatarName: {
         fontSize: typography.md,
         fontWeight: typography.bold,
         color: colors.textPrimary,
-        marginBottom: 3,
+    },
+    nameEditRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    nameInput: {
+        flex: 1,
+        fontSize: typography.base,
+        fontWeight: typography.semibold,
+        color: colors.textPrimary,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.primary,
+        paddingVertical: 2,
+    },
+    nameSaveBtn: {
+        width: 28,
+        height: 28,
+        borderRadius: 8,
+        backgroundColor: colors.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    nameCancelBtn: {
+        width: 28,
+        height: 28,
+        borderRadius: 8,
+        backgroundColor: colors.surfaceHighlight,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     avatarPhone: {
         fontSize: typography.sm,
@@ -273,6 +626,94 @@ const styles = StyleSheet.create({
         letterSpacing: 2,
         paddingHorizontal: 20,
         marginBottom: 10,
+    },
+
+    // Stats card
+    statsCard: {
+        marginHorizontal: 20,
+        backgroundColor: colors.surface,
+        borderRadius: 16,
+        padding: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: colors.border,
+        marginBottom: 24,
+    },
+    statBox: {
+        flex: 1,
+        alignItems: 'center',
+        gap: 6,
+    },
+    statNum: {
+        fontSize: typography.xxxl,
+        fontWeight: typography.black,
+        color: colors.textPrimary,
+        letterSpacing: -1,
+        lineHeight: 40,
+    },
+    statLabel: {
+        fontSize: 9,
+        fontWeight: typography.bold,
+        color: colors.textMuted,
+        letterSpacing: 1.5,
+    },
+    statDivider: {
+        width: 1,
+        height: 40,
+        backgroundColor: colors.border,
+    },
+
+    // Usage card
+    usageCard: {
+        marginHorizontal: 20,
+        backgroundColor: colors.surface,
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+        marginBottom: 24,
+        gap: 10,
+    },
+    usageTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    usageLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    usageTitle: {
+        fontSize: typography.sm,
+        fontWeight: typography.semibold,
+        color: colors.textPrimary,
+    },
+    usageCount: {
+        fontSize: typography.sm,
+    },
+    usageUsed: {
+        fontWeight: typography.bold,
+        color: colors.textPrimary,
+    },
+    usageTotal: {
+        color: colors.textMuted,
+    },
+    usageTrack: {
+        height: 6,
+        backgroundColor: colors.border,
+        borderRadius: 3,
+        overflow: 'hidden',
+    },
+    usageFill: {
+        height: 6,
+        borderRadius: 3,
+    },
+    usageHint: {
+        fontSize: typography.xs,
+        color: colors.textMuted,
+        fontWeight: typography.medium,
     },
 
     // Menu card
@@ -318,7 +759,7 @@ const styles = StyleSheet.create({
         fontWeight: typography.semibold,
     },
 
-    // Upgrade banner
+    // Upgrade
     upgradeCard: {
         marginHorizontal: 20,
         backgroundColor: colors.primaryDim,
@@ -331,9 +772,7 @@ const styles = StyleSheet.create({
         borderColor: colors.primary,
         marginBottom: 24,
     },
-    upgradeLeft: {
-        flex: 1,
-    },
+    upgradeLeft: { flex: 1 },
     upgradeTitle: {
         fontSize: typography.base,
         fontWeight: typography.bold,
@@ -376,13 +815,91 @@ const styles = StyleSheet.create({
         fontWeight: typography.bold,
         color: colors.primary,
     },
-
-    // Footer
     footer: {
         textAlign: 'center',
         fontSize: 11,
         color: colors.textMuted,
         fontWeight: typography.medium,
         paddingHorizontal: 20,
+    },
+    // No exam empty state
+    noExamCard: {
+        marginHorizontal: 20,
+        backgroundColor: colors.surface,
+        borderRadius: 14,
+        paddingVertical: 32,
+        alignItems: 'center',
+        gap: 8,
+        borderWidth: 1,
+        borderColor: colors.border,
+        marginBottom: 24,
+    },
+    noExamTitle: {
+        fontSize: typography.sm,
+        fontWeight: typography.semibold,
+        color: colors.textSecondary,
+        marginTop: 4,
+    },
+    noExamSub: {
+        fontSize: typography.xs,
+        color: colors.textMuted,
+        textAlign: 'center',
+    },
+
+    // Clean exam cards
+    examsList: {
+        marginHorizontal: 20,
+        gap: 8,
+        marginBottom: 24,
+    },
+    examCleanCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.surface,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: colors.border,
+        overflow: 'hidden',
+        minHeight: 64,
+        paddingVertical: 14,
+        paddingHorizontal: 14,
+        gap: 12,
+    },
+    examCleanAccent: {
+        width: 3,
+        height: 32,
+        borderRadius: 2,
+    },
+    examCleanContent: {
+        flex: 1,
+        gap: 5,
+    },
+    examCleanName: {
+        fontSize: typography.sm,
+        fontWeight: typography.bold,
+        color: colors.textPrimary,
+        letterSpacing: -0.2,
+    },
+    examCleanDetails: {
+        fontSize: 11,
+        color: colors.textMuted,
+        fontWeight: typography.medium,
+        letterSpacing: 0.1,
+    },
+    examCleanDaysBox: {
+        paddingRight: 16,
+        paddingLeft: 8,
+        alignItems: 'center',
+    },
+    examCleanDaysNum: {
+        fontSize: typography.xl,
+        fontWeight: typography.black,
+        letterSpacing: -0.5,
+        lineHeight: 26,
+    },
+    examCleanDaysLabel: {
+        fontSize: 10,
+        fontWeight: typography.medium,
+        letterSpacing: 0.3,
     },
 });

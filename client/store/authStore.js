@@ -84,6 +84,32 @@ const useAuthStore = create((set) => ({
     set({ user: updatedProfile });
   },
 
+  // Upload avatar
+  uploadAvatar: async (file) => {
+    try {
+      const response = await authService.uploadAvatar(file);
+      set((state) => ({
+        user: { ...state.user, avatar_url: response.avatar_url },
+      }));
+      return { success: true, avatar_url: response.avatar_url };
+    } catch (error) {
+      return { success: false, error: 'Failed to upload avatar.' };
+    }
+  },
+
+  // Delete avatar
+  deleteAvatar: async () => {
+    try {
+      await authService.deleteAvatar();
+      set((state) => ({
+        user: { ...state.user, avatar_url: null },
+      }));
+      return { success: true };
+    } catch (error) {
+      return { success: false };
+    }
+  },
+
   // Clear any error messages
   clearError: () => set({ error: null }),
 }));

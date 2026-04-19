@@ -14,6 +14,8 @@ const API = {
     VERIFY_OTP: '/api/v1/auth/verify-otp',
     GET_PROFILE: '/api/v1/auth/me',
     UPDATE_PROFILE: '/api/v1/auth/me',
+    UPLOAD_AVATAR: '/api/v1/auth/upload-avatar',
+    DELETE_AVATAR: '/api/v1/auth/delete-avatar',
 
     // Admit Card
     PARSE_ADMIT_CARD: '/api/v1/admit-card/parse',

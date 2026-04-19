@@ -55,6 +55,32 @@ const authService = {
     const token = await storage.getToken();
     return !!token; // returns true if token exists
   },
+
+  // Upload profile picture
+  uploadAvatar: async (file) => {
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name || 'avatar.jpg',
+      type: file.mimeType || 'image/jpeg',
+    });
+    const response = await apiClient.post(
+      API.ENDPOINTS.UPLOAD_AVATAR,
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }
+    );
+    return response.data;
+  },
+
+  // Delete profile picture
+  deleteAvatar: async () => {
+    const response = await apiClient.delete(API.ENDPOINTS.DELETE_AVATAR);
+    return response.data;
+  },
+
+
 };
 
 export default authService;

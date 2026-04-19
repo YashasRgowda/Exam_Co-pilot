@@ -6,6 +6,7 @@ import {
     TouchableOpacity,
     RefreshControl,
     StatusBar,
+    Image,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -74,8 +75,20 @@ export default function HomeScreen() {
                             <Text style={styles.greetingSmall}>{getGreeting()}, {firstName}</Text>
                             <Text style={styles.appName}>ExamPilot</Text>
                         </View>
-                        <TouchableOpacity style={styles.avatarCircle}>
-                            <Text style={styles.avatarLetter}>{firstName.charAt(0).toUpperCase()}</Text>
+                        <TouchableOpacity
+                            style={styles.avatarCircle}
+                            onPress={() => router.push('/(tabs)/profile')}
+                        >
+                            {user?.avatar_url ? (
+                                <Image
+                                    source={{ uri: user.avatar_url }}
+                                    style={styles.avatarImage}
+                                />
+                            ) : (
+                                <Text style={styles.avatarLetter}>
+                                    {firstName.charAt(0).toUpperCase()}
+                                </Text>
+                            )}
                         </TouchableOpacity>
                     </View>
 
@@ -86,50 +99,55 @@ export default function HomeScreen() {
                             onPress={() => router.push(`/exam/${nextExam.id}`)}
                             activeOpacity={0.88}
                         >
-                            <View style={styles.heroStrip}>
-                                <View style={styles.heroStripLeft}>
-                                    <View style={styles.liveDot} />
-                                    <Text style={styles.heroStripLabel}>NEXT EXAM</Text>
-                                </View>
-                                <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.5)" />
+                            {/* Top row — label + arrow */}
+                            <View style={styles.heroTopRow}>
+                                <Text style={styles.heroLabel}>NEXT EXAM</Text>
+                                <Ionicons name="chevron-forward" size={13} color={colors.textMuted} />
                             </View>
-                            <View style={styles.heroBody}>
-                                <Text style={styles.heroExamName} numberOfLines={2}>
-                                    {nextExam.exam_name}
-                                </Text>
-                                <View style={styles.heroStatsRow}>
-                                    <View style={styles.heroStat}>
-                                        <Text style={[styles.heroStatBig, { color: getDaysAccent(nextExam.days_remaining) }]}>
-                                            {nextExam.days_remaining ?? '—'}
-                                        </Text>
-                                        <Text style={styles.heroStatLabel}>DAYS LEFT</Text>
-                                    </View>
-                                    <View style={styles.heroStatDivider} />
-                                    <View style={styles.heroStat}>
-                                        <Text style={styles.heroStatMed}>
-                                            {nextExam.exam_date
-                                                ? new Date(nextExam.exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-                                                : '—'}
-                                        </Text>
-                                        <Text style={styles.heroStatLabel}>DATE</Text>
-                                    </View>
-                                    <View style={styles.heroStatDivider} />
-                                    <View style={styles.heroStat}>
-                                        <Text style={styles.heroStatMed}>
-                                            {nextExam.reporting_time?.slice(0, 5) ?? '—'}
-                                        </Text>
-                                        <Text style={styles.heroStatLabel}>REPORT BY</Text>
-                                    </View>
+
+                            {/* Exam name */}
+                            <Text style={styles.heroExamName} numberOfLines={1}>
+                                {nextExam.exam_name}
+                            </Text>
+
+                            {/* Accent divider */}
+                            <View style={styles.heroDivider} />
+
+                            {/* Stats row — clean, no box */}
+                            <View style={styles.heroStatsRow}>
+                                <View style={styles.heroStat}>
+                                    <Text style={[styles.heroStatBig, { color: getDaysAccent(nextExam.days_remaining) }]}>
+                                        {nextExam.days_remaining ?? '—'}
+                                    </Text>
+                                    <Text style={styles.heroStatLabel}>DAYS LEFT</Text>
                                 </View>
-                                {nextExam.center_city && (
-                                    <View style={styles.heroCenterRow}>
-                                        <Ionicons name="location" size={11} color={colors.textMuted} />
-                                        <Text style={styles.heroCenterText} numberOfLines={1}>
-                                            {nextExam.center_city}
-                                        </Text>
-                                    </View>
-                                )}
+                                <View style={styles.heroStatDivider} />
+                                <View style={styles.heroStat}>
+                                    <Text style={styles.heroStatMed}>
+                                        {nextExam.exam_date
+                                            ? new Date(nextExam.exam_date).toLocaleDateString('en-IN', {
+                                                day: 'numeric', month: 'short'
+                                            })
+                                            : '—'}
+                                    </Text>
+                                    <Text style={styles.heroStatLabel}>DATE</Text>
+                                </View>
+                                <View style={styles.heroStatDivider} />
+                                <View style={styles.heroStat}>
+                                    <Text style={styles.heroStatMed}>
+                                        {nextExam.reporting_time?.slice(0, 5) ?? '—'}
+                                    </Text>
+                                    <Text style={styles.heroStatLabel}>REPORT BY</Text>
+                                </View>
                             </View>
+
+                            {/* City */}
+                            {nextExam.center_city && (
+                                <View style={styles.heroCenterRow}>
+                                    <Ionicons name="location-outline" size={11} color={colors.textMuted} />
+                                    <Text style={styles.heroCenterText}>{nextExam.center_city}</Text>
+                                </View>
+                            )}
                         </TouchableOpacity>
                     ) : (
                         <TouchableOpacity
@@ -152,63 +170,81 @@ export default function HomeScreen() {
                         </TouchableOpacity>
                     )}
 
-                    {/* ── QUICK ACTIONS 2x2 ── */}
-                    <View style={styles.actionsGrid}>
-                        <View style={styles.actionsRow}>
+                    {/* ── QUICK ACTIONS ── */}
+                    <View style={styles.actionsRow}>
+                        <TouchableOpacity
+                            style={styles.actionCard}
+                            onPress={() => router.push('/(tabs)/profile')}
+                            activeOpacity={0.85}
+                        >
+                            <View style={[styles.actionIconBox, { backgroundColor: colors.primaryGlow }]}>
+                                <Ionicons name="albums-outline" size={20} color={colors.primary} />
+                            </View>
+                            <View>
+                                <Text style={styles.actionTitle}>My Exams</Text>
+                                <Text style={styles.actionSub}>All exams</Text>
+                            </View>
+                        </TouchableOpacity>
 
-                            <TouchableOpacity
-                                style={styles.actionCard}
-                                onPress={() => router.push('/(tabs)/upload')}
-                                activeOpacity={0.85}
-                            >
-                                <View style={[styles.actionIconBox, { backgroundColor: colors.primaryGlow }]}>
-                                    <Ionicons name="scan-outline" size={20} color={colors.primary} />
-                                </View>
-                                <Text style={styles.actionTitle}>Scan Card</Text>
-                                <Text style={styles.actionSub}>AI parser</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.actionCard}
-                                onPress={() => nextExam && router.push(`/exam/checklist/${nextExam.id}`)}
-                                activeOpacity={0.85}
-                            >
-                                <View style={[styles.actionIconBox, { backgroundColor: colors.neonGreenDim }]}>
-                                    <Ionicons name="checkbox-outline" size={20} color={colors.neonGreen} />
-                                </View>
+                        <TouchableOpacity
+                            style={styles.actionCard}
+                            onPress={() => nextExam
+                                ? router.push(`/exam/checklist/${nextExam.id}`)
+                                : router.push('/(tabs)/upload')
+                            }
+                            activeOpacity={0.85}
+                        >
+                            <View style={[styles.actionIconBox, { backgroundColor: colors.neonGreenDim }]}>
+                                <Ionicons name="checkbox-outline" size={20} color={colors.neonGreen} />
+                            </View>
+                            <View>
                                 <Text style={styles.actionTitle}>Checklist</Text>
-                                <Text style={styles.actionSub}>Exam prep</Text>
-                            </TouchableOpacity>
-
-                        </View>
-
-                        <View style={styles.actionsRow}>
-
-                            <TouchableOpacity
-                                style={styles.actionCard}
-                                activeOpacity={0.85}
-                            >
-                                <View style={[styles.actionIconBox, { backgroundColor: colors.neonBlueDim }]}>
-                                    <Ionicons name="navigate-outline" size={20} color={colors.neonBlue} />
-                                </View>
-                                <Text style={styles.actionTitle}>Navigate</Text>
-                                <Text style={styles.actionSub}>To center</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.actionCard}
-                                onPress={() => router.push('/(tabs)/profile')}
-                                activeOpacity={0.85}
-                            >
-                                <View style={[styles.actionIconBox, { backgroundColor: colors.neonAmberDim }]}>
-                                    <Ionicons name="person-outline" size={20} color={colors.neonAmber} />
-                                </View>
-                                <Text style={styles.actionTitle}>Profile</Text>
-                                <Text style={styles.actionSub}>My info</Text>
-                            </TouchableOpacity>
-
-                        </View>
+                                <Text style={styles.actionSub}>
+                                    {nextExam ? 'Exam prep' : 'Upload first'}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
                     </View>
+
+                    {/* ── EMPTY STATE — only shown when no exams ── */}
+                    {upcomingExams.length === 0 && pastExams.length === 0 && (
+                        <View style={styles.emptyStateSection}>
+
+                            <Text style={styles.emptyStateHeadline}>
+                                One app.{'\n'}Zero exam stress.
+                            </Text>
+
+                            <View style={styles.featureCardsRow}>
+
+                                {/* Card 1 */}
+                                <View style={styles.featureCard}>
+                                    <View style={styles.featureIconBox}>
+                                        <Ionicons name="document-text-outline" size={20} color={colors.primary} />
+                                    </View>
+                                    <Text style={styles.featureCardTitle}>
+                                        Know Your Exam Inside Out
+                                    </Text>
+                                    <Text style={styles.featureCardDesc}>
+                                        Date, center, timings — organized the moment you upload.
+                                    </Text>
+                                </View>
+
+                                {/* Card 2 */}
+                                <View style={styles.featureCard}>
+                                    <View style={[styles.featureIconBox, { backgroundColor: colors.neonGreenDim }]}>
+                                        <Ionicons name="navigate-outline" size={20} color={colors.neonGreen} />
+                                    </View>
+                                    <Text style={styles.featureCardTitle}>
+                                        Get There Without Stress
+                                    </Text>
+                                    <Text style={styles.featureCardDesc}>
+                                        Travel time, cab booking and exam reminders — all handled.
+                                    </Text>
+                                </View>
+
+                            </View>
+                        </View>
+                    )}
 
                     {/* ── UPCOMING EXAMS ── */}
                     {upcomingExams.length > 1 && (
@@ -305,62 +341,49 @@ const styles = StyleSheet.create({
         color: colors.primary,
     },
 
-    // Hero
+    // Hero card
     heroCard: {
         marginHorizontal: 20,
-        borderRadius: 18,
-        overflow: 'hidden',
         backgroundColor: colors.surface,
+        borderRadius: 18,
+        padding: 18,
+        marginBottom: 16,
         borderWidth: 1,
         borderColor: colors.border,
-        marginBottom: 16,
         borderLeftWidth: 3,
         borderLeftColor: colors.primary,
+        gap: 12,
     },
-    heroStrip: {
-        backgroundColor: colors.primary,
-        paddingHorizontal: 16,
-        paddingVertical: 9,
+    heroTopRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
     },
-    heroStripLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 7,
-    },
-    liveDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: colors.white,
-        opacity: 0.9,
-    },
-    heroStripLabel: {
-        fontSize: typography.xs,
+    heroLabel: {
+        fontSize: 10,
         fontWeight: typography.bold,
-        color: colors.white,
-        letterSpacing: 1.5,
+        color: colors.primary,
+        letterSpacing: 2,
     },
-    heroBody: { padding: 16 },
+    heroDivider: {
+        height: 1,
+        backgroundColor: colors.border,
+    },
     heroExamName: {
         fontSize: typography.lg,
         fontWeight: typography.black,
         color: colors.textPrimary,
-        letterSpacing: -0.3,
-        lineHeight: 27,
-        marginBottom: 14,
+        letterSpacing: -0.5,
     },
     heroStatsRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: colors.surfaceRaised,
-        borderRadius: 12,
-        padding: 13,
-        marginBottom: 10,
     },
-    heroStat: { flex: 1, alignItems: 'center' },
+    heroStat: {
+        flex: 1,
+        alignItems: 'center',
+        gap: 4,
+    },
     heroStatBig: {
         fontSize: typography.xxxl,
         fontWeight: typography.black,
@@ -368,7 +391,7 @@ const styles = StyleSheet.create({
         lineHeight: 38,
     },
     heroStatMed: {
-        fontSize: typography.lg,
+        fontSize: typography.md,
         fontWeight: typography.bold,
         color: colors.textPrimary,
         letterSpacing: -0.3,
@@ -378,9 +401,12 @@ const styles = StyleSheet.create({
         fontWeight: typography.bold,
         color: colors.textMuted,
         letterSpacing: 1.2,
-        marginTop: 3,
     },
-    heroStatDivider: { width: 1, height: 32, backgroundColor: colors.border },
+    heroStatDivider: {
+        width: 1,
+        height: 32,
+        backgroundColor: colors.border,
+    },
     heroCenterRow: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -389,7 +415,7 @@ const styles = StyleSheet.create({
     heroCenterText: {
         fontSize: typography.xs,
         color: colors.textMuted,
-        flex: 1,
+        fontWeight: typography.medium,
     },
 
     // Empty card
@@ -440,22 +466,21 @@ const styles = StyleSheet.create({
         borderColor: colors.primaryDim,
     },
 
-    // Actions
-    actionsGrid: {
+    // Quick actions
+    actionsRow: {
+        flexDirection: 'row',
         paddingHorizontal: 20,
         gap: 10,
         marginBottom: 24,
-    },
-    actionsRow: {
-        flexDirection: 'row',
-        gap: 10,
     },
     actionCard: {
         flex: 1,
         backgroundColor: colors.surface,
         borderRadius: 16,
         padding: 16,
-        gap: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
         borderWidth: 1,
         borderColor: colors.border,
     },
@@ -467,7 +492,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     actionTitle: {
-        fontSize: typography.base,
+        fontSize: typography.sm,
         fontWeight: typography.bold,
         color: colors.textPrimary,
     },
@@ -475,6 +500,7 @@ const styles = StyleSheet.create({
         fontSize: typography.xs,
         color: colors.textMuted,
         fontWeight: typography.medium,
+        marginTop: 1,
     },
 
     // Section
@@ -543,5 +569,57 @@ const styles = StyleSheet.create({
         color: colors.neonAmber,
         fontWeight: typography.medium,
         flex: 1,
+    },
+    avatarImage: {
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+    },
+
+    // Empty state feature cards
+    emptyStateSection: {
+        paddingHorizontal: 20,
+        marginBottom: 24,
+        gap: 16,
+    },
+    emptyStateHeadline: {
+        fontSize: typography.xxl,
+        fontWeight: typography.black,
+        color: colors.textPrimary,
+        letterSpacing: -0.8,
+        lineHeight: 36,
+    },
+    featureCardsRow: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    featureCard: {
+        flex: 1,
+        backgroundColor: colors.surface,
+        borderRadius: 16,
+        padding: 16,
+        gap: 10,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    featureIconBox: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        backgroundColor: colors.primaryGlow,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    featureCardTitle: {
+        fontSize: typography.sm,
+        fontWeight: typography.bold,
+        color: colors.textPrimary,
+        lineHeight: 20,
+    },
+    featureCardDesc: {
+        fontSize: 11,
+        color: colors.textMuted,
+        lineHeight: 17,
+        fontWeight: typography.medium,
     },
 });
