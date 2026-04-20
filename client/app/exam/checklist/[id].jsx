@@ -15,8 +15,6 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import useExamStore from '../../../store/examStore';
 import checklistService from '../../../services/checklistService';
-import colors from '../../../constants/colors';
-import typography from '../../../constants/typography';
 
 export default function ChecklistScreen() {
     const router = useRouter();
@@ -31,18 +29,17 @@ export default function ChecklistScreen() {
         if (id) fetchChecklist(id);
     }, [id]);
 
-    // Load acknowledged state for this exam
     useEffect(() => {
-        const loadAcknowledged = async () => {
+        const load = async () => {
             try {
                 const val = await AsyncStorage.getItem(`acknowledged_${id}`);
                 if (val === 'true') setAcknowledged(true);
             } catch { }
         };
-        if (id) loadAcknowledged();
+        if (id) load();
     }, [id]);
 
-    const checkedCount = currentChecklist.filter((i) => i.is_checked).length;
+    const checkedCount = currentChecklist.filter(i => i.is_checked).length;
     const totalCount = currentChecklist.length;
     const progressPercent = totalCount > 0 ? (checkedCount / totalCount) * 100 : 0;
     const allDone = checkedCount === totalCount && totalCount > 0;
@@ -55,224 +52,234 @@ export default function ChecklistScreen() {
             await fetchChecklist(id);
             setNewItem('');
             setAdding(false);
-        } catch {
-            Alert.alert('Error', 'Could not add item.');
-        } finally {
-            setLoading(false);
-        }
+        } catch { Alert.alert('Error', 'Could not add item.'); }
+        finally { setLoading(false); }
     };
 
     const handleDelete = async (itemId) => {
         try {
             await checklistService.deleteItem(itemId);
             await fetchChecklist(id);
-        } catch {
-            Alert.alert('Error', 'Could not delete item.');
-        }
+        } catch { Alert.alert('Error', 'Could not delete item.'); }
     };
 
     const handleAcknowledge = async () => {
-        const newVal = !acknowledged;
-        setAcknowledged(newVal);
-        try {
-            await AsyncStorage.setItem(`acknowledged_${id}`, String(newVal));
-        } catch { }
+        const next = !acknowledged;
+        setAcknowledged(next);
+        try { await AsyncStorage.setItem(`acknowledged_${id}`, String(next)); } catch { }
     };
+
+    const progressColor = allDone ? '#00E676' : progressPercent > 66 ? '#FFB800' : '#C41E3A';
 
     return (
         <>
-            <StatusBar barStyle="light-content" backgroundColor={colors.background} />
-            <SafeAreaView style={styles.container} edges={['top']}>
+            <StatusBar barStyle="light-content" backgroundColor="#06060E" />
+            <SafeAreaView style={styles.root} edges={['top']}>
 
                 {/* ── HEADER ── */}
-                <View style={styles.header}>
+                <View style={styles.topNav}>
                     <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={18} color={colors.textPrimary} />
+                        <Ionicons name="arrow-back" size={16} color="#E0E0EC" />
                     </TouchableOpacity>
-                    <Text style={styles.headerLabel}>CHECKLIST</Text>
-                    <View style={{ width: 36 }} />
                 </View>
 
-                {/* ── PROGRESS BAR ── */}
-                <View style={styles.progressSection}>
-                    <View style={styles.progressTop}>
-                        <Text style={styles.progressText}>
-                            {allDone ? 'All packed! Ready for exam 🎯' : `${checkedCount} of ${totalCount} items ready`}
-                        </Text>
-                        <Text style={styles.progressPercent}>{Math.round(progressPercent)}%</Text>
-                    </View>
-                    <View style={styles.progressTrack}>
-                        <View style={[
-                            styles.progressFill,
-                            {
-                                width: `${progressPercent}%`,
-                                backgroundColor: allDone ? colors.neonGreen : colors.primary,
-                            }
-                        ]} />
+                {/* ── PROGRESS HERO ── */}
+                <View style={styles.heroWrap}>
+                    <Text style={styles.heroTitle}>Exam Checklist</Text>
+
+                    <View style={styles.heroCard}>
+                        {/* Big fraction */}
+                        <View style={styles.heroLeft}>
+                            <Text style={[styles.heroFracTop, { color: progressColor }]}>
+                                {checkedCount}
+                            </Text>
+                            <View style={[styles.heroFracLine, { backgroundColor: progressColor + '50' }]} />
+                            <Text style={styles.heroFracBottom}>{totalCount}</Text>
+                            <Text style={[styles.heroFracLabel, { color: progressColor }]}>PACKED</Text>
+                        </View>
+
+                        <View style={styles.heroCardDivider} />
+
+                        {/* Right — status + bar */}
+                        <View style={styles.heroRight}>
+                            <Text style={styles.heroStatusText}>
+                                {allDone
+                                    ? 'You\'re fully packed!'
+                                    : `${totalCount - checkedCount} item${totalCount - checkedCount !== 1 ? 's' : ''} left to pack`}
+                            </Text>
+
+                            {/* Progress bar */}
+                            <View style={styles.heroBar}>
+                                <View style={[styles.heroBarFill, {
+                                    width: `${progressPercent}%`,
+                                    backgroundColor: progressColor,
+                                }]} />
+                            </View>
+                            <Text style={[styles.heroPercent, { color: progressColor }]}>
+                                {Math.round(progressPercent)}% complete
+                            </Text>
+
+                            {allDone && (
+                                <View style={styles.readyChip}>
+                                    <Ionicons name="checkmark-circle" size={12} color="#00E676" />
+                                    <Text style={styles.readyChipText}>Exam Ready!</Text>
+                                </View>
+                            )}
+                        </View>
                     </View>
                 </View>
 
                 <ScrollView showsVerticalScrollIndicator={false}>
 
-                    {/* ── CHECKLIST ITEMS ── */}
-                    <Text style={styles.sectionLabel}>ITEMS TO CARRY</Text>
-                    <View style={styles.itemsCard}>
-                        {currentChecklist.map((item, i) => (
-                            <View key={item.id}>
-                                <TouchableOpacity
-                                    style={styles.itemRow}
-                                    onPress={() => toggleChecklistItem(item.id, item.is_checked)}
-                                    activeOpacity={0.85}
-                                >
-                                    <View style={[
-                                        styles.checkbox,
-                                        item.is_checked && styles.checkboxChecked,
-                                    ]}>
-                                        {item.is_checked && (
-                                            <Ionicons name="checkmark" size={13} color={colors.white} />
+                    {/* ── ITEMS ── */}
+                    <View style={styles.section}>
+                        <Text style={styles.sectionLabel}>ITEMS TO CARRY</Text>
+                        <View style={styles.itemsCard}>
+                            {currentChecklist.map((item, i) => (
+                                <View key={item.id}>
+                                    <TouchableOpacity
+                                        style={styles.itemRow}
+                                        onPress={() => toggleChecklistItem(item.id, item.is_checked)}
+                                        activeOpacity={0.8}
+                                    >
+                                        <View style={[styles.checkbox, item.is_checked && styles.checkboxDone]}>
+                                            {item.is_checked && (
+                                                <Ionicons name="checkmark" size={12} color="#06060E" />
+                                            )}
+                                        </View>
+                                        <Text style={[styles.itemText, item.is_checked && styles.itemTextDone]}>
+                                            {item.item_name}
+                                        </Text>
+                                        {!item.is_default && (
+                                            <TouchableOpacity
+                                                style={styles.deleteBtn}
+                                                onPress={() => handleDelete(item.id)}
+                                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                            >
+                                                <Ionicons name="close" size={12} color="#38384A" />
+                                            </TouchableOpacity>
                                         )}
-                                    </View>
-                                    <Text style={[
-                                        styles.itemText,
-                                        item.is_checked && styles.itemTextChecked,
-                                    ]}>
-                                        {item.item_name}
-                                    </Text>
-                                    {!item.is_default && (
-                                        <TouchableOpacity
-                                            onPress={() => handleDelete(item.id)}
-                                            style={styles.deleteBtn}
-                                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                        >
-                                            <Ionicons name="close" size={14} color={colors.textMuted} />
-                                        </TouchableOpacity>
-                                    )}
-                                </TouchableOpacity>
-                                {i < currentChecklist.length - 1 && (
-                                    <View style={styles.itemDivider} />
-                                )}
-                            </View>
-                        ))}
-                    </View>
-
-                    {/* ── ADD CUSTOM ITEM ── */}
-                    {adding ? (
-                        <View style={styles.addInputCard}>
-                            <TextInput
-                                style={styles.addInput}
-                                placeholder="Item name..."
-                                placeholderTextColor={colors.textMuted}
-                                value={newItem}
-                                onChangeText={setNewItem}
-                                autoFocus
-                                returnKeyType="done"
-                                onSubmitEditing={handleAddItem}
-                            />
-                            <View style={styles.addActions}>
-                                <TouchableOpacity
-                                    style={styles.addCancelBtn}
-                                    onPress={() => { setAdding(false); setNewItem(''); }}
-                                >
-                                    <Text style={styles.addCancelText}>Cancel</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[styles.addConfirmBtn, !newItem.trim() && { opacity: 0.5 }]}
-                                    onPress={handleAddItem}
-                                    disabled={!newItem.trim() || loading}
-                                >
-                                    <Text style={styles.addConfirmText}>Add</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    ) : (
-                        <TouchableOpacity
-                            style={styles.addItemBtn}
-                            onPress={() => setAdding(true)}
-                            activeOpacity={0.85}
-                        >
-                            <Ionicons name="add" size={18} color={colors.primary} />
-                            <Text style={styles.addItemText}>Add custom item</Text>
-                        </TouchableOpacity>
-                    )}
-
-                    {/* ── EXAM INSTRUCTIONS ── */}
-                    <Text style={styles.sectionLabel}>EXAM INSTRUCTIONS</Text>
-                    <View style={styles.instructionsCard}>
-
-                        <View style={styles.instructionGroup}>
-                            <View style={styles.instructionGroupHeader}>
-                                <View style={[styles.instructionGroupDot, { backgroundColor: colors.primary }]} />
-                                <Text style={styles.instructionGroupTitle}>Do Not Bring</Text>
-                            </View>
-                            {[
-                                'Mobile phone or any electronic device',
-                                'Smartwatch or digital watch',
-                                'Calculator or any measuring tool',
-                                'Bluetooth or wireless devices',
-                                'Bags, pouches or stationery box',
-                                'Loose papers or books',
-                            ].map((item, i) => (
-                                <View key={i} style={styles.instructionRow}>
-                                    <Text style={styles.instructionBullet}>✕</Text>
-                                    <Text style={styles.instructionText}>{item}</Text>
+                                    </TouchableOpacity>
+                                    {i < currentChecklist.length - 1 && <View style={styles.itemDiv} />}
                                 </View>
                             ))}
                         </View>
-
-                        <View style={styles.instructionsDivider} />
-
-                        <View style={styles.instructionGroup}>
-                            <View style={styles.instructionGroupHeader}>
-                                <View style={[styles.instructionGroupDot, { backgroundColor: colors.neonGreen }]} />
-                                <Text style={styles.instructionGroupTitle}>Remember</Text>
-                            </View>
-                            {[
-                                'Arrive at least 30 minutes before reporting time',
-                                'Carry original government ID proof',
-                                'Fill OMR sheet carefully — no corrections allowed',
-                                'Bring only a transparent water bottle',
-                                'Paste your photograph on the attendance sheet',
-                                'Gate closes strictly — no entry after closing time',
-                            ].map((item, i) => (
-                                <View key={i} style={styles.instructionRow}>
-                                    <Text style={[styles.instructionBullet, { color: colors.neonGreen }]}>→</Text>
-                                    <Text style={styles.instructionText}>{item}</Text>
-                                </View>
-                            ))}
-                        </View>
-
                     </View>
 
-                    {/* ── ACKNOWLEDGEMENT BUTTON ── */}
-                    <TouchableOpacity
-                        style={[styles.readyBtn, acknowledged && styles.readyBtnConfirmed]}
-                        onPress={handleAcknowledge}
-                        activeOpacity={0.88}
-                    >
-                        {acknowledged ? (
-                            <View style={styles.readyBtnInner}>
-                                <View style={styles.readyCheckCircle}>
-                                    <Ionicons name="checkmark" size={16} color={colors.primary} />
+                    {/* ── ADD ITEM ── */}
+                    <View style={styles.section}>
+                        {adding ? (
+                            <View style={styles.addCard}>
+                                <TextInput
+                                    style={styles.addInput}
+                                    value={newItem}
+                                    onChangeText={setNewItem}
+                                    autoFocus
+                                    placeholder="Item name..."
+                                    placeholderTextColor="#252538"
+                                    returnKeyType="done"
+                                    onSubmitEditing={handleAddItem}
+                                    selectionColor="#C41E3A"
+                                />
+                                <View style={styles.addBtns}>
+                                    <TouchableOpacity
+                                        style={styles.addCancelBtn}
+                                        onPress={() => { setAdding(false); setNewItem(''); }}
+                                    >
+                                        <Text style={styles.addCancelText}>Cancel</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.addConfirmBtn, (!newItem.trim() || loading) && { opacity: 0.5 }]}
+                                        onPress={handleAddItem}
+                                        disabled={!newItem.trim() || loading}
+                                    >
+                                        <Text style={styles.addConfirmText}>Add Item</Text>
+                                    </TouchableOpacity>
                                 </View>
-                                <Text style={styles.readyBtnText}>Confirmed — You're Exam Ready</Text>
                             </View>
                         ) : (
-                            <View style={styles.readyBtnInner}>
-                                <View style={styles.readyEmptyCircle} />
-                                <Text style={[styles.readyBtnText, { color: colors.textSecondary }]}>
-                                    I've read all instructions
+                            <TouchableOpacity style={styles.addTrigger} onPress={() => setAdding(true)} activeOpacity={0.82}>
+                                <View style={styles.addTriggerIcon}>
+                                    <Ionicons name="add" size={16} color="#C41E3A" />
+                                </View>
+                                <Text style={styles.addTriggerText}>Add custom item</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {/* ── INSTRUCTIONS ── */}
+                    <View style={styles.section}>
+                        <Text style={styles.sectionLabel}>EXAM INSTRUCTIONS</Text>
+                        <View style={styles.instrCard}>
+
+                            {/* Do not bring */}
+                            <View style={styles.instrGroup}>
+                                <View style={styles.instrGroupHead}>
+                                    <View style={[styles.instrDot, { backgroundColor: '#C41E3A' }]} />
+                                    <Text style={styles.instrGroupTitle}>Do Not Bring</Text>
+                                </View>
+                                {[
+                                    'Mobile phone or any electronic device',
+                                    'Smartwatch or digital watch',
+                                    'Calculator or any measuring tool',
+                                    'Bluetooth or wireless devices',
+                                    'Bags, pouches or stationery box',
+                                    'Loose papers or books',
+                                ].map((item, i) => (
+                                    <View key={i} style={styles.instrRow}>
+                                        <Text style={[styles.instrBullet, { color: '#C41E3A' }]}>✕</Text>
+                                        <Text style={styles.instrText}>{item}</Text>
+                                    </View>
+                                ))}
+                            </View>
+
+                            <View style={styles.instrDiv} />
+
+                            {/* Remember */}
+                            <View style={styles.instrGroup}>
+                                <View style={styles.instrGroupHead}>
+                                    <View style={[styles.instrDot, { backgroundColor: '#00E676' }]} />
+                                    <Text style={styles.instrGroupTitle}>Remember</Text>
+                                </View>
+                                {[
+                                    'Arrive at least 30 minutes before reporting time',
+                                    'Carry original government ID proof',
+                                    'Fill OMR sheet carefully — no corrections allowed',
+                                    'Bring only a transparent water bottle',
+                                    'Paste photograph on attendance sheet',
+                                    'Gate closes strictly — no entry after closing time',
+                                ].map((item, i) => (
+                                    <View key={i} style={styles.instrRow}>
+                                        <Text style={[styles.instrBullet, { color: '#00E676' }]}>→</Text>
+                                        <Text style={styles.instrText}>{item}</Text>
+                                    </View>
+                                ))}
+                            </View>
+                        </View>
+                    </View>
+
+                    {/* ── ACKNOWLEDGEMENT ── */}
+                    <View style={styles.section}>
+                        <TouchableOpacity
+                            style={[styles.ackBtn, acknowledged && styles.ackBtnDone]}
+                            onPress={handleAcknowledge}
+                            activeOpacity={0.88}
+                        >
+                            <View style={[styles.ackCircle, acknowledged && styles.ackCircleDone]}>
+                                {acknowledged && <Ionicons name="checkmark" size={14} color="#fff" />}
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.ackTitle, acknowledged && { color: '#00E676' }]}>
+                                    {acknowledged ? 'Confirmed — Exam Ready!' : "I've read all instructions"}
+                                </Text>
+                                <Text style={styles.ackSub}>
+                                    {acknowledged ? 'Tap to undo' : 'Tap to confirm before your exam'}
                                 </Text>
                             </View>
-                        )}
-                        <Text style={[
-                            styles.readyBtnSub,
-                            acknowledged && { color: 'rgba(196,30,58,0.6)' }
-                        ]}>
-                            {acknowledged ? 'Tap to undo' : 'Tap to confirm before your exam'}
-                        </Text>
-                    </TouchableOpacity>
+                        </TouchableOpacity>
+                    </View>
 
-                    <View style={{ height: 40 }} />
+                    <View style={{ height: 48 }} />
                 </ScrollView>
             </SafeAreaView>
         </>
@@ -280,281 +287,137 @@ export default function ChecklistScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.background,
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingVertical: 14,
+    root: { flex: 1, backgroundColor: '#06060E' },
+
+    topNav: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4,
     },
     backBtn: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        backgroundColor: colors.surface,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: colors.border,
+        width: 36, height: 36, borderRadius: 10,
+        backgroundColor: '#0F0F1E', borderWidth: 1, borderColor: '#1A1A2E',
+        justifyContent: 'center', alignItems: 'center',
     },
-    headerLabel: {
-        fontSize: 11,
-        fontWeight: typography.bold,
-        color: colors.textMuted,
-        letterSpacing: 2,
+
+    // ── HERO ──
+    heroWrap: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20, gap: 14 },
+    heroTitle: { fontSize: 22, fontWeight: '800', color: '#F5F5FA', letterSpacing: -0.5 },
+    heroCard: {
+        flexDirection: 'row', backgroundColor: '#0C0C1A',
+        borderRadius: 18, borderWidth: 1, borderColor: '#1A1A2E',
+        overflow: 'hidden', minHeight: 140,
     },
-    progressSection: {
-        paddingHorizontal: 20,
-        paddingBottom: 20,
-        gap: 8,
+    heroLeft: {
+        paddingHorizontal: 20, paddingVertical: 18,
+        justifyContent: 'center', alignItems: 'center', gap: 4,
+        minWidth: 90,
     },
-    progressTop: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+    heroFracTop: { fontSize: 44, fontWeight: '900', letterSpacing: -2, lineHeight: 48 },
+    heroFracLine: { width: 30, height: 1.5, borderRadius: 1 },
+    heroFracBottom: { fontSize: 20, fontWeight: '700', color: '#52526A' },
+    heroFracLabel: { fontSize: 8, fontWeight: '800', letterSpacing: 1.5, marginTop: 4 },
+    heroCardDivider: { width: 1, backgroundColor: '#1A1A2E' },
+    heroRight: { flex: 1, padding: 18, justifyContent: 'center', gap: 10 },
+    heroStatusText: { fontSize: 14, fontWeight: '700', color: '#E8E8F0', lineHeight: 20 },
+    heroBar: { height: 4, backgroundColor: '#1A1A2E', borderRadius: 2, overflow: 'hidden' },
+    heroBarFill: { height: 4, borderRadius: 2 },
+    heroPercent: { fontSize: 11, fontWeight: '700' },
+    readyChip: {
+        flexDirection: 'row', alignItems: 'center', gap: 5,
+        alignSelf: 'flex-start',
+        backgroundColor: 'rgba(0,230,118,0.1)', borderRadius: 6,
+        paddingHorizontal: 8, paddingVertical: 4,
+        borderWidth: 1, borderColor: 'rgba(0,230,118,0.2)',
     },
-    progressText: {
-        fontSize: typography.sm,
-        fontWeight: typography.semibold,
-        color: colors.textPrimary,
-    },
-    progressPercent: {
-        fontSize: typography.sm,
-        fontWeight: typography.bold,
-        color: colors.primary,
-    },
-    progressTrack: {
-        height: 4,
-        backgroundColor: colors.border,
-        borderRadius: 2,
-        overflow: 'hidden',
-    },
-    progressFill: {
-        height: 4,
-        borderRadius: 2,
-    },
-    sectionLabel: {
-        fontSize: 10,
-        fontWeight: typography.bold,
-        color: colors.textMuted,
-        letterSpacing: 2,
-        paddingHorizontal: 20,
-        marginBottom: 10,
-    },
+    readyChipText: { fontSize: 11, fontWeight: '700', color: '#00E676' },
+
+    // ── SECTION ──
+    section: { paddingHorizontal: 20, marginBottom: 20 },
+    sectionLabel: { fontSize: 9, fontWeight: '700', color: '#38384A', letterSpacing: 2.5, marginBottom: 10 },
+
+    // ── ITEMS ──
     itemsCard: {
-        marginHorizontal: 20,
-        backgroundColor: colors.surface,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
-        overflow: 'hidden',
-        marginBottom: 24,
+        backgroundColor: '#0C0C1A', borderRadius: 14,
+        borderWidth: 1, borderColor: '#1A1A2E', overflow: 'hidden',
     },
     itemRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 15,
-        gap: 14,
+        flexDirection: 'row', alignItems: 'center',
+        paddingVertical: 14, paddingHorizontal: 14, gap: 13,
     },
-    itemDivider: {
-        height: 1,
-        backgroundColor: colors.border,
-        marginHorizontal: 16,
-    },
+    itemDiv: { height: 1, backgroundColor: '#0F0F1E', marginHorizontal: 14 },
     checkbox: {
-        width: 24,
-        height: 24,
-        borderRadius: 7,
-        borderWidth: 1.5,
-        borderColor: colors.borderBright,
-        justifyContent: 'center',
-        alignItems: 'center',
+        width: 22, height: 22, borderRadius: 7,
+        borderWidth: 1.5, borderColor: '#252538',
+        justifyContent: 'center', alignItems: 'center',
     },
-    checkboxChecked: {
-        backgroundColor: colors.neonGreen,
-        borderColor: colors.neonGreen,
-    },
-    itemText: {
-        flex: 1,
-        fontSize: typography.sm,
-        fontWeight: typography.medium,
-        color: colors.textPrimary,
-    },
-    itemTextChecked: {
-        color: colors.textMuted,
-        textDecorationLine: 'line-through',
-    },
+    checkboxDone: { backgroundColor: '#00E676', borderColor: '#00E676' },
+    itemText: { flex: 1, fontSize: 13, fontWeight: '500', color: '#D8D8E8' },
+    itemTextDone: { color: '#38384A', textDecorationLine: 'line-through' },
     deleteBtn: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: colors.surfaceHighlight,
-        justifyContent: 'center',
-        alignItems: 'center',
+        width: 22, height: 22, borderRadius: 11,
+        backgroundColor: '#141428', justifyContent: 'center', alignItems: 'center',
     },
-    addInputCard: {
-        marginHorizontal: 20,
-        backgroundColor: colors.surface,
-        borderRadius: 14,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: colors.borderBright,
-        marginBottom: 24,
-        gap: 12,
+
+    // ── ADD ──
+    addTrigger: {
+        flexDirection: 'row', alignItems: 'center', gap: 12,
+        backgroundColor: '#0C0C1A', borderRadius: 13,
+        borderWidth: 1, borderColor: '#1A1A2E', borderStyle: 'dashed',
+        paddingVertical: 13, paddingHorizontal: 14,
+    },
+    addTriggerIcon: {
+        width: 26, height: 26, borderRadius: 8,
+        backgroundColor: 'rgba(196,30,58,0.1)',
+        justifyContent: 'center', alignItems: 'center',
+    },
+    addTriggerText: { fontSize: 13, fontWeight: '600', color: '#C41E3A' },
+    addCard: {
+        backgroundColor: '#0C0C1A', borderRadius: 13,
+        borderWidth: 1, borderColor: 'rgba(196,30,58,0.3)',
+        padding: 14, gap: 12,
     },
     addInput: {
-        fontSize: typography.sm,
-        color: colors.textPrimary,
-        fontWeight: typography.medium,
-        paddingVertical: 4,
+        fontSize: 13, color: '#E0E0EC', fontWeight: '500',
+        paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#C41E3A',
     },
-    addActions: {
-        flexDirection: 'row',
-        gap: 10,
-        justifyContent: 'flex-end',
-    },
-    addCancelBtn: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-    },
-    addCancelText: {
-        fontSize: typography.sm,
-        color: colors.textMuted,
-        fontWeight: typography.medium,
-    },
+    addBtns: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+    addCancelBtn: { paddingHorizontal: 14, paddingVertical: 8 },
+    addCancelText: { fontSize: 12, color: '#38384A', fontWeight: '500' },
     addConfirmBtn: {
-        backgroundColor: colors.primary,
-        borderRadius: 8,
-        paddingHorizontal: 20,
-        paddingVertical: 8,
+        backgroundColor: '#C41E3A', borderRadius: 8, paddingHorizontal: 18, paddingVertical: 8,
     },
-    addConfirmText: {
-        fontSize: typography.sm,
-        fontWeight: typography.bold,
-        color: colors.white,
+    addConfirmText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+
+    // ── INSTRUCTIONS ──
+    instrCard: {
+        backgroundColor: '#0C0C1A', borderRadius: 14,
+        borderWidth: 1, borderColor: '#1A1A2E', overflow: 'hidden',
     },
-    addItemBtn: {
-        marginHorizontal: 20,
-        backgroundColor: colors.surface,
-        borderRadius: 14,
-        padding: 14,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-        borderWidth: 1,
-        borderColor: colors.border,
-        borderStyle: 'dashed',
-        marginBottom: 24,
+    instrGroup: { padding: 16, gap: 10 },
+    instrGroupHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
+    instrDot: { width: 6, height: 6, borderRadius: 3 },
+    instrGroupTitle: { fontSize: 11, fontWeight: '700', color: '#72728A', letterSpacing: 0.3 },
+    instrDiv: { height: 1, backgroundColor: '#141428', marginHorizontal: 16 },
+    instrRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+    instrBullet: { fontSize: 11, fontWeight: '700', width: 14, marginTop: 2 },
+    instrText: { flex: 1, fontSize: 12, color: '#52526A', fontWeight: '500', lineHeight: 18 },
+
+    // ── ACK ──
+    ackBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 14,
+        backgroundColor: '#0C0C1A', borderRadius: 14,
+        borderWidth: 1.5, borderColor: '#1A1A2E', borderStyle: 'dashed', padding: 16,
     },
-    addItemText: {
-        fontSize: typography.sm,
-        fontWeight: typography.semibold,
-        color: colors.primary,
+    ackBtnDone: {
+        backgroundColor: 'rgba(0,230,118,0.05)',
+        borderColor: 'rgba(0,230,118,0.3)', borderStyle: 'solid',
     },
-    instructionsCard: {
-        marginHorizontal: 20,
-        backgroundColor: colors.surface,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
-        overflow: 'hidden',
-        marginBottom: 16,
+    ackCircle: {
+        width: 28, height: 28, borderRadius: 14,
+        borderWidth: 1.5, borderColor: '#252538',
+        justifyContent: 'center', alignItems: 'center',
     },
-    instructionGroup: {
-        padding: 16,
-        gap: 10,
-    },
-    instructionGroupHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        marginBottom: 4,
-    },
-    instructionGroupDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-    },
-    instructionGroupTitle: {
-        fontSize: 11,
-        fontWeight: typography.bold,
-        color: colors.textSecondary,
-        letterSpacing: 0.5,
-    },
-    instructionsDivider: {
-        height: 1,
-        backgroundColor: colors.border,
-        marginHorizontal: 16,
-    },
-    instructionRow: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: 10,
-    },
-    instructionBullet: {
-        fontSize: 11,
-        fontWeight: typography.bold,
-        color: colors.primary,
-        width: 14,
-        marginTop: 2,
-    },
-    instructionText: {
-        flex: 1,
-        fontSize: typography.sm,
-        color: colors.textSecondary,
-        fontWeight: typography.medium,
-        lineHeight: 20,
-    },
-    readyBtn: {
-        marginHorizontal: 20,
-        backgroundColor: colors.surfaceRaised,
-        borderRadius: 16,
-        padding: 18,
-        alignItems: 'center',
-        gap: 6,
-        marginBottom: 24,
-        borderWidth: 1.5,
-        borderColor: colors.borderBright,
-        borderStyle: 'dashed',
-    },
-    readyBtnConfirmed: {
-        backgroundColor: colors.primaryDim,
-        borderColor: colors.primary,
-        borderStyle: 'solid',
-    },
-    readyBtnInner: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    readyEmptyCircle: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        borderWidth: 1.5,
-        borderColor: colors.borderBright,
-    },
-    readyCheckCircle: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: colors.white,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    readyBtnText: {
-        fontSize: typography.base,
-        fontWeight: typography.bold,
-        color: colors.primary,
-        letterSpacing: 0.2,
-    },
-    readyBtnSub: {
-        fontSize: 11,
-        color: colors.textMuted,
-        fontWeight: typography.medium,
-    },
+    ackCircleDone: { backgroundColor: '#00E676', borderColor: '#00E676' },
+    ackTitle: { fontSize: 13, fontWeight: '700', color: '#A0A0B8', marginBottom: 3 },
+    ackSub: { fontSize: 11, color: '#323244', fontWeight: '500' },
 });

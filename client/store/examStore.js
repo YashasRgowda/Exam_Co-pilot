@@ -90,8 +90,17 @@ const useExamStore = create((set, get) => ({
         }
 
         const response = await dashboardService.getExamDashboard(examId);
+        const today = new Date(); today.setHours(0,0,0,0);
+        const examDay = new Date(response.exam?.exam_date); examDay.setHours(0,0,0,0);
+        const computedDays = response.exam?.exam_date
+          ? Math.ceil((examDay - today) / (1000 * 60 * 60 * 24))
+          : null;
+
         set({
-            currentExam: response.exam,
+            currentExam: {
+                ...response.exam,
+                days_remaining: response.days_remaining ?? computedDays,
+            },
             currentChecklist: response.checklist,
             isOffline: false,
             isLoading: false,
@@ -128,6 +137,9 @@ const useExamStore = create((set, get) => ({
         exams: [response.exam, ...state.exams],
         isUploading: false,
       }));
+
+      // Refresh dashboard so home screen updates immediately
+      await get().fetchDashboard();
 
       return { success: true, exam: response.exam };
     } catch (error) {

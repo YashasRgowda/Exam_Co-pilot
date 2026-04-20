@@ -7,6 +7,7 @@ import {
     RefreshControl,
     StatusBar,
     Image,
+    Dimensions,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,7 +17,10 @@ import useAuthStore from '../../store/authStore';
 import useExamStore from '../../store/examStore';
 import colors from '../../constants/colors';
 import typography from '../../constants/typography';
-import { formatDate, getDaysColor } from '../../utils/formatters';
+import { formatDate } from '../../utils/formatters';
+
+const { width } = Dimensions.get('window');
+const TILE_SIZE = (width - 20 * 2 - 10) / 2;
 
 export default function HomeScreen() {
     const router = useRouter();
@@ -46,9 +50,9 @@ export default function HomeScreen() {
 
     const getDaysAccent = (days) => {
         if (days === undefined || days === null) return colors.textMuted;
-        if (days <= 3) return colors.primary;
-        if (days <= 7) return colors.neonAmber;
-        return colors.neonGreen;
+        if (days <= 3) return '#C41E3A';
+        if (days <= 7) return '#FFB800';
+        return '#00E676';
     };
 
     return (
@@ -58,7 +62,11 @@ export default function HomeScreen() {
                 <ScrollView
                     showsVerticalScrollIndicator={false}
                     refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            tintColor={colors.primary}
+                        />
                     }
                 >
                     {/* ── OFFLINE BANNER ── */}
@@ -70,20 +78,20 @@ export default function HomeScreen() {
                             </Text>
                         </View>
                     )}
+
+                    {/* ── TOP BAR ── */}
                     <View style={styles.topBar}>
-                        <View>
+                        <View style={styles.topBarLeft}>
                             <Text style={styles.greetingSmall}>{getGreeting()}, {firstName}</Text>
                             <Text style={styles.appName}>ExamPilot</Text>
                         </View>
                         <TouchableOpacity
                             style={styles.avatarCircle}
                             onPress={() => router.push('/(tabs)/profile')}
+                            activeOpacity={0.85}
                         >
                             {user?.avatar_url ? (
-                                <Image
-                                    source={{ uri: user.avatar_url }}
-                                    style={styles.avatarImage}
-                                />
+                                <Image source={{ uri: user.avatar_url }} style={styles.avatarImage} />
                             ) : (
                                 <Text style={styles.avatarLetter}>
                                     {firstName.charAt(0).toUpperCase()}
@@ -99,21 +107,14 @@ export default function HomeScreen() {
                             onPress={() => router.push(`/exam/${nextExam.id}`)}
                             activeOpacity={0.88}
                         >
-                            {/* Top row — label + arrow */}
                             <View style={styles.heroTopRow}>
                                 <Text style={styles.heroLabel}>NEXT EXAM</Text>
                                 <Ionicons name="chevron-forward" size={13} color={colors.textMuted} />
                             </View>
-
-                            {/* Exam name */}
                             <Text style={styles.heroExamName} numberOfLines={1}>
                                 {nextExam.exam_name}
                             </Text>
-
-                            {/* Accent divider */}
                             <View style={styles.heroDivider} />
-
-                            {/* Stats row — clean, no box */}
                             <View style={styles.heroStatsRow}>
                                 <View style={styles.heroStat}>
                                     <Text style={[styles.heroStatBig, { color: getDaysAccent(nextExam.days_remaining) }]}>
@@ -125,9 +126,7 @@ export default function HomeScreen() {
                                 <View style={styles.heroStat}>
                                     <Text style={styles.heroStatMed}>
                                         {nextExam.exam_date
-                                            ? new Date(nextExam.exam_date).toLocaleDateString('en-IN', {
-                                                day: 'numeric', month: 'short'
-                                            })
+                                            ? new Date(nextExam.exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
                                             : '—'}
                                     </Text>
                                     <Text style={styles.heroStatLabel}>DATE</Text>
@@ -137,11 +136,16 @@ export default function HomeScreen() {
                                     <Text style={styles.heroStatMed}>
                                         {nextExam.reporting_time?.slice(0, 5) ?? '—'}
                                     </Text>
-                                    <Text style={styles.heroStatLabel}>REPORT BY</Text>
+                                    <Text style={styles.heroStatLabel}>START</Text>
+                                </View>
+                                <View style={styles.heroStatDivider} />
+                                <View style={styles.heroStat}>
+                                    <Text style={styles.heroStatMed}>
+                                        {nextExam.gate_closing_time?.slice(0, 5) ?? '—'}
+                                    </Text>
+                                    <Text style={styles.heroStatLabel}>END</Text>
                                 </View>
                             </View>
-
-                            {/* City */}
                             {nextExam.center_city && (
                                 <View style={styles.heroCenterRow}>
                                     <Ionicons name="location-outline" size={11} color={colors.textMuted} />
@@ -151,7 +155,7 @@ export default function HomeScreen() {
                         </TouchableOpacity>
                     ) : (
                         <TouchableOpacity
-                            style={styles.emptyCard}
+                            style={styles.emptyHeroCard}
                             onPress={() => router.push('/(tabs)/upload')}
                             activeOpacity={0.88}
                         >
@@ -199,51 +203,93 @@ export default function HomeScreen() {
                             </View>
                             <View>
                                 <Text style={styles.actionTitle}>Checklist</Text>
-                                <Text style={styles.actionSub}>
-                                    {nextExam ? 'Exam prep' : 'Upload first'}
-                                </Text>
+                                <Text style={styles.actionSub}>{nextExam ? 'Exam prep' : 'Upload first'}</Text>
                             </View>
                         </TouchableOpacity>
                     </View>
 
-                    {/* ── EMPTY STATE — only shown when no exams ── */}
+                    {/* ── EMPTY STATE ── */}
                     {upcomingExams.length === 0 && pastExams.length === 0 && (
-                        <View style={styles.emptyStateSection}>
+                        <>
+                            {/* ── SECTION BREAK ── */}
+                            <View style={styles.sectionBreak}>
+                                <View style={styles.sectionBreakLine} />
+                                <Text style={styles.sectionBreakLabel}>WHAT YOU GET</Text>
+                                <View style={styles.sectionBreakLine} />
+                            </View>
 
-                            <Text style={styles.emptyStateHeadline}>
-                                One app.{'\n'}Zero exam stress.
-                            </Text>
+                            <View style={styles.emptyState}>
 
-                            <View style={styles.featureCardsRow}>
-
-                                {/* Card 1 */}
-                                <View style={styles.featureCard}>
-                                    <View style={styles.featureIconBox}>
-                                        <Ionicons name="document-text-outline" size={20} color={colors.primary} />
-                                    </View>
-                                    <Text style={styles.featureCardTitle}>
-                                        Know Your Exam Inside Out
+                                {/* Headline */}
+                                <View style={styles.headlineBlock}>
+                                    <Text style={styles.headline}>
+                                        Exam day,{'\n'}sorted.
                                     </Text>
-                                    <Text style={styles.featureCardDesc}>
-                                        Date, center, timings — organized the moment you upload.
+                                    <Text style={styles.headlineSub}>
+                                        Upload your admit card — get your center, timings, checklist and reminders. All in one place.
                                     </Text>
                                 </View>
 
-                                {/* Card 2 */}
-                                <View style={styles.featureCard}>
-                                    <View style={[styles.featureIconBox, { backgroundColor: colors.neonGreenDim }]}>
-                                        <Ionicons name="navigate-outline" size={20} color={colors.neonGreen} />
+                                {/* ── MOSAIC GRID ── */}
+                                <View style={styles.mosaicGrid}>
+
+                                    {/* Tile 1 — tall left — AI Parsing */}
+                                    <View style={[styles.tile, styles.tileTallLeft, { backgroundColor: '#0E0810' }]}>
+                                        <View style={[styles.tileIconWrap, { backgroundColor: 'rgba(196,30,58,0.12)' }]}>
+                                            <Ionicons name="scan-outline" size={22} color="#C41E3A" />
+                                        </View>
+                                        <View style={styles.tileTextWrap}>
+                                            <Text style={styles.tileTitle}>AI Parsing</Text>
+                                            <Text style={styles.tileSub}>
+                                                Reads every detail from your admit card instantly
+                                            </Text>
+                                        </View>
+                                        <View style={styles.tileBadge}>
+                                            <Text style={styles.tileBadgeText}>INSTANT</Text>
+                                        </View>
                                     </View>
-                                    <Text style={styles.featureCardTitle}>
-                                        Get There Without Stress
-                                    </Text>
-                                    <Text style={styles.featureCardDesc}>
-                                        Travel time, cab booking and exam reminders — all handled.
-                                    </Text>
+
+                                    {/* Right column */}
+                                    <View style={styles.tileRightCol}>
+
+                                        {/* Tile 2 — Navigation */}
+                                        <View style={[styles.tile, styles.tileSmall, { backgroundColor: '#080E0A' }]}>
+                                            <View style={[styles.tileIconWrap, { backgroundColor: 'rgba(0,230,118,0.1)' }]}>
+                                                <Ionicons name="navigate-outline" size={18} color="#00E676" />
+                                            </View>
+                                            <Text style={styles.tileTitle}>Navigation</Text>
+                                            <Text style={styles.tileSub}>Route + cab links</Text>
+                                        </View>
+
+                                        {/* Tile 3 — Reminders */}
+                                        <View style={[styles.tile, styles.tileSmall, { backgroundColor: '#080A0E' }]}>
+                                            <View style={[styles.tileIconWrap, { backgroundColor: 'rgba(77,159,255,0.1)' }]}>
+                                                <Ionicons name="alarm-outline" size={18} color="#4D9FFF" />
+                                            </View>
+                                            <Text style={styles.tileTitle}>Reminders</Text>
+                                            <Text style={styles.tileSub}>Night & morning alerts</Text>
+                                        </View>
+                                    </View>
+                                </View>
+
+                                {/* ── WIDE TILE — Smart Checklist ── */}
+                                <View style={[styles.tile, styles.tileWide, { backgroundColor: '#0C0A06' }]}>
+                                    <View style={[styles.tileIconWrap, { backgroundColor: 'rgba(255,184,0,0.1)' }]}>
+                                        <Ionicons name="checkbox-outline" size={18} color="#FFB800" />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.tileTitle}>Smart Checklist</Text>
+                                        <Text style={styles.tileSub}>
+                                            Auto-generated — admit card, ID, pens, water bottle
+                                        </Text>
+                                    </View>
+                                    <View style={[styles.tileTag, { backgroundColor: 'rgba(255,184,0,0.1)', borderColor: 'rgba(255,184,0,0.2)' }]}>
+                                        <Text style={[styles.tileTagText, { color: '#FFB800' }]}>AUTO</Text>
+                                    </View>
                                 </View>
 
                             </View>
-                        </View>
+                        </>
                     )}
 
                     {/* ── UPCOMING EXAMS ── */}
@@ -305,43 +351,44 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
 
+    // ── TOP BAR ──
     topBar: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingTop: 10,
-        paddingBottom: 20,
+        alignItems: 'flex-end',
+        paddingHorizontal: 22,
+        paddingTop: 18,
+        paddingBottom: 26,
     },
+    topBarLeft: { gap: 3 },
     greetingSmall: {
-        fontSize: typography.sm,
-        color: colors.textSecondary,
-        fontWeight: typography.medium,
-        marginBottom: 2,
+        fontSize: 14,
+        color: '#52526A',
+        fontWeight: '500',
+        letterSpacing: 0.1,
     },
     appName: {
-        fontSize: typography.xxl,
-        fontWeight: typography.black,
-        color: colors.textPrimary,
-        letterSpacing: -0.8,
+        fontSize: 34,
+        fontWeight: '800',
+        color: '#F0F0F8',
+        letterSpacing: -1.2,
+        lineHeight: 38,
     },
     avatarCircle: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
-        backgroundColor: colors.primaryDim,
-        borderWidth: 1.5,
-        borderColor: colors.primary,
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: '#0F0F1E',
+        borderWidth: 2,
+        borderColor: '#C41E3A',
         justifyContent: 'center',
         alignItems: 'center',
+        marginBottom: 3,
     },
-    avatarLetter: {
-        fontSize: typography.base,
-        fontWeight: typography.bold,
-        color: colors.primary,
-    },
+    avatarLetter: { fontSize: 17, fontWeight: '700', color: '#C41E3A' },
+    avatarImage: { width: 44, height: 44, borderRadius: 22 },
 
-    // Hero card
+    // ── HERO CARD ──
     heroCard: {
         marginHorizontal: 20,
         backgroundColor: colors.surface,
@@ -354,72 +401,21 @@ const styles = StyleSheet.create({
         borderLeftColor: colors.primary,
         gap: 12,
     },
-    heroTopRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    heroLabel: {
-        fontSize: 10,
-        fontWeight: typography.bold,
-        color: colors.primary,
-        letterSpacing: 2,
-    },
-    heroDivider: {
-        height: 1,
-        backgroundColor: colors.border,
-    },
-    heroExamName: {
-        fontSize: typography.lg,
-        fontWeight: typography.black,
-        color: colors.textPrimary,
-        letterSpacing: -0.5,
-    },
-    heroStatsRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    heroStat: {
-        flex: 1,
-        alignItems: 'center',
-        gap: 4,
-    },
-    heroStatBig: {
-        fontSize: typography.xxxl,
-        fontWeight: typography.black,
-        letterSpacing: -1,
-        lineHeight: 38,
-    },
-    heroStatMed: {
-        fontSize: typography.md,
-        fontWeight: typography.bold,
-        color: colors.textPrimary,
-        letterSpacing: -0.3,
-    },
-    heroStatLabel: {
-        fontSize: 9,
-        fontWeight: typography.bold,
-        color: colors.textMuted,
-        letterSpacing: 1.2,
-    },
-    heroStatDivider: {
-        width: 1,
-        height: 32,
-        backgroundColor: colors.border,
-    },
-    heroCenterRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    heroCenterText: {
-        fontSize: typography.xs,
-        color: colors.textMuted,
-        fontWeight: typography.medium,
-    },
+    heroTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    heroLabel: { fontSize: 10, fontWeight: '700', color: colors.primary, letterSpacing: 2 },
+    heroDivider: { height: 1, backgroundColor: colors.border },
+    heroExamName: { fontSize: typography.lg, fontWeight: '900', color: colors.textPrimary, letterSpacing: -0.5 },
+    heroStatsRow: { flexDirection: 'row', alignItems: 'center' },
+    heroStat: { flex: 1, alignItems: 'center', gap: 4 },
+    heroStatBig: { fontSize: typography.xxxl, fontWeight: '900', letterSpacing: -1, lineHeight: 38 },
+    heroStatMed: { fontSize: typography.md, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.3 },
+    heroStatLabel: { fontSize: 9, fontWeight: '700', color: colors.textMuted, letterSpacing: 1.2 },
+    heroStatDivider: { width: 1, height: 32, backgroundColor: colors.border },
+    heroCenterRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    heroCenterText: { fontSize: typography.xs, color: colors.textMuted, fontWeight: '500' },
 
-    // Empty card
-    emptyCard: {
+    // ── EMPTY HERO ──
+    emptyHeroCard: {
         marginHorizontal: 20,
         backgroundColor: colors.surface,
         borderRadius: 18,
@@ -444,17 +440,8 @@ const styles = StyleSheet.create({
         borderColor: colors.primaryDim,
     },
     emptyTextBox: { flex: 1 },
-    emptyTitle: {
-        fontSize: typography.base,
-        fontWeight: typography.bold,
-        color: colors.textPrimary,
-        marginBottom: 3,
-    },
-    emptySubtitle: {
-        fontSize: typography.xs,
-        color: colors.textSecondary,
-        lineHeight: 17,
-    },
+    emptyTitle: { fontSize: typography.base, fontWeight: '700', color: colors.textPrimary, marginBottom: 3 },
+    emptySubtitle: { fontSize: typography.xs, color: colors.textSecondary, lineHeight: 17 },
     emptyArrow: {
         width: 34,
         height: 34,
@@ -466,13 +453,8 @@ const styles = StyleSheet.create({
         borderColor: colors.primaryDim,
     },
 
-    // Quick actions
-    actionsRow: {
-        flexDirection: 'row',
-        paddingHorizontal: 20,
-        gap: 10,
-        marginBottom: 24,
-    },
+    // ── QUICK ACTIONS ──
+    actionsRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 24 },
     actionCard: {
         flex: 1,
         backgroundColor: colors.surface,
@@ -484,37 +466,149 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: colors.border,
     },
-    actionIconBox: {
-        width: 40,
-        height: 40,
-        borderRadius: 12,
+    actionIconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    actionTitle: { fontSize: typography.sm, fontWeight: '700', color: colors.textPrimary },
+    actionSub: { fontSize: typography.xs, color: colors.textMuted, fontWeight: '500', marginTop: 1 },
+
+    // ── SECTION BREAK ──
+    // The separator between quick actions and the empty state below
+    sectionBreak: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        gap: 12,
+        marginBottom: 28,
+    },
+    sectionBreakLine: {
+        flex: 1,
+        height: 1,
+        backgroundColor: '#141428',
+    },
+    sectionBreakLabel: {
+        fontSize: 9,
+        fontWeight: '700',
+        color: '#252538',
+        letterSpacing: 2.5,
+    },
+
+    // ── EMPTY STATE ──
+    emptyState: {
+        paddingHorizontal: 20,
+        gap: 12,
+        marginBottom: 24,
+    },
+
+    // Headline
+    headlineBlock: { gap: 8, marginBottom: 4 },
+    headline: {
+        fontSize: 30,
+        fontWeight: '800',
+        color: '#F0F0F8',
+        letterSpacing: -0.8,
+        lineHeight: 36,
+    },
+    headlineSub: {
+        fontSize: 13,
+        color: '#3A3A52',
+        fontWeight: '500',
+        lineHeight: 20,
+    },
+
+    // ── MOSAIC GRID ──
+    mosaicGrid: {
+        flexDirection: 'row',
+        gap: 10,
+        height: TILE_SIZE * 1.1,
+    },
+
+    // Base tile
+    tile: {
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#141428',
+        padding: 14,
+        overflow: 'hidden',
+    },
+    tileTallLeft: {
+        flex: 1,
+        justifyContent: 'space-between',
+    },
+    tileRightCol: {
+        flex: 1,
+        gap: 10,
+    },
+    tileSmall: {
+        flex: 1,
+        gap: 6,
+    },
+    tileWide: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    tileIconWrap: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
         justifyContent: 'center',
         alignItems: 'center',
     },
-    actionTitle: {
-        fontSize: typography.sm,
-        fontWeight: typography.bold,
-        color: colors.textPrimary,
+    tileTextWrap: {
+        flex: 1,
+        gap: 4,
+        marginTop: 10,
     },
-    actionSub: {
-        fontSize: typography.xs,
-        color: colors.textMuted,
-        fontWeight: typography.medium,
-        marginTop: 1,
+    tileTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#E0E0EC',
+        letterSpacing: -0.2,
+    },
+    tileSub: {
+        fontSize: 11,
+        color: '#323244',
+        fontWeight: '500',
+        lineHeight: 16,
+    },
+    tileBadge: {
+        alignSelf: 'flex-start',
+        backgroundColor: 'rgba(196,30,58,0.12)',
+        borderRadius: 6,
+        paddingHorizontal: 7,
+        paddingVertical: 3,
+        borderWidth: 1,
+        borderColor: 'rgba(196,30,58,0.2)',
+    },
+    tileBadgeText: {
+        fontSize: 8,
+        fontWeight: '800',
+        color: '#C41E3A',
+        letterSpacing: 1.2,
+    },
+    tileTag: {
+        borderRadius: 6,
+        paddingHorizontal: 7,
+        paddingVertical: 3,
+        borderWidth: 1,
+    },
+    tileTagText: {
+        fontSize: 8,
+        fontWeight: '800',
+        letterSpacing: 1.2,
     },
 
-    // Section
+    // ── SECTIONS ──
     section: { marginBottom: 20 },
     sectionLabel: {
         fontSize: 10,
-        fontWeight: typography.bold,
+        fontWeight: '700',
         color: colors.textMuted,
         letterSpacing: 2,
         paddingHorizontal: 20,
         marginBottom: 10,
     },
 
-    // Exam rows
+    // ── EXAM ROWS ──
     examRow: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -529,28 +623,13 @@ const styles = StyleSheet.create({
         borderColor: colors.border,
     },
     pastRow: { opacity: 0.45 },
-    examAccentBar: {
-        width: 3,
-        height: 32,
-        borderRadius: 2,
-    },
+    examAccentBar: { width: 3, height: 32, borderRadius: 2 },
     examRowInfo: { flex: 1 },
-    examRowName: {
-        fontSize: typography.sm,
-        fontWeight: typography.semibold,
-        color: colors.textPrimary,
-        marginBottom: 3,
-    },
-    examRowDate: {
-        fontSize: typography.xs,
-        color: colors.textMuted,
-    },
-    examDaysText: {
-        fontSize: typography.sm,
-        fontWeight: typography.bold,
-    },
+    examRowName: { fontSize: typography.sm, fontWeight: '600', color: colors.textPrimary, marginBottom: 3 },
+    examRowDate: { fontSize: typography.xs, color: colors.textMuted },
+    examDaysText: { fontSize: typography.sm, fontWeight: '700' },
 
-    // Offline banner
+    // ── OFFLINE BANNER ──
     offlineBanner: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -567,59 +646,7 @@ const styles = StyleSheet.create({
     offlineBannerText: {
         fontSize: typography.xs,
         color: colors.neonAmber,
-        fontWeight: typography.medium,
+        fontWeight: '500',
         flex: 1,
-    },
-    avatarImage: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
-    },
-
-    // Empty state feature cards
-    emptyStateSection: {
-        paddingHorizontal: 20,
-        marginBottom: 24,
-        gap: 16,
-    },
-    emptyStateHeadline: {
-        fontSize: typography.xxl,
-        fontWeight: typography.black,
-        color: colors.textPrimary,
-        letterSpacing: -0.8,
-        lineHeight: 36,
-    },
-    featureCardsRow: {
-        flexDirection: 'row',
-        gap: 10,
-    },
-    featureCard: {
-        flex: 1,
-        backgroundColor: colors.surface,
-        borderRadius: 16,
-        padding: 16,
-        gap: 10,
-        borderWidth: 1,
-        borderColor: colors.border,
-    },
-    featureIconBox: {
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        backgroundColor: colors.primaryGlow,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    featureCardTitle: {
-        fontSize: typography.sm,
-        fontWeight: typography.bold,
-        color: colors.textPrimary,
-        lineHeight: 20,
-    },
-    featureCardDesc: {
-        fontSize: 11,
-        color: colors.textMuted,
-        lineHeight: 17,
-        fontWeight: typography.medium,
     },
 });

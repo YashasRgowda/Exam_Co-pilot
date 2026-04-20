@@ -7,6 +7,7 @@ import {
     StatusBar,
     Linking,
     ActivityIndicator,
+    Dimensions,
 } from 'react-native';
 import { useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,8 +15,19 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import useExamStore from '../../store/examStore';
-import colors from '../../constants/colors';
-import typography from '../../constants/typography';
+
+const { width } = Dimensions.get('window');
+const TILE_W = (width - 40 - 20) / 3;
+
+// Compute days locally as fallback — normalized to midnight, no drift
+const computeDays = (examDate) => {
+    if (!examDate) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const exam = new Date(examDate);
+    exam.setHours(0, 0, 0, 0);
+    return Math.ceil((exam - today) / (1000 * 60 * 60 * 24));
+};
 
 export default function ExamDetailScreen() {
     const router = useRouter();
@@ -40,321 +52,284 @@ export default function ExamDetailScreen() {
 
     const handleGetDirections = async () => {
         try {
-            // Request location permission
             const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                alert('Location permission is needed to get directions to your exam center.');
-                return;
-            }
-
-            // Get current GPS coordinates
-            const location = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.High,
-            });
-
-            const { latitude, longitude } = location.coords;
-
-            // Call backend with exam_id + coordinates
-            await fetchDirections(id, latitude, longitude);
-
-        } catch (error) {
-            alert('Could not get your location. Please try again.');
-        }
+            if (status !== 'granted') { alert('Location permission needed.'); return; }
+            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+            await fetchDirections(id, loc.coords.latitude, loc.coords.longitude);
+        } catch { alert('Could not get location. Please try again.'); }
     };
 
-    const openLink = (url) => {
-        if (url) Linking.openURL(url);
-    };
+    const openLink = (url) => { if (url) Linking.openURL(url); };
 
     if (isLoading || !currentExam) {
         return (
             <View style={styles.loadingScreen}>
                 <StatusBar barStyle="light-content" />
+                <ActivityIndicator color="#C41E3A" size="small" />
                 <Text style={styles.loadingText}>Loading...</Text>
             </View>
         );
     }
 
-    const checkedCount = currentChecklist.filter((i) => i.is_checked).length;
+    // days_remaining: from store (backend) OR computed locally as fallback
+    const daysLeft = currentExam.days_remaining ?? computeDays(currentExam.exam_date);
+
+    const getAccent = () => {
+        if (daysLeft === null || daysLeft === undefined) return '#72728A';
+        if (daysLeft <= 0) return '#C41E3A';
+        if (daysLeft <= 3) return '#C41E3A';
+        if (daysLeft <= 7) return '#FFB800';
+        return '#00E676';
+    };
+    const accent = getAccent();
+
+    const checkedCount = currentChecklist.filter(i => i.is_checked).length;
     const totalCount = currentChecklist.length;
     const progressPercent = totalCount > 0 ? (checkedCount / totalCount) * 100 : 0;
-
+    const allDone = checkedCount === totalCount && totalCount > 0;
     const nav = navigationData?.navigation;
     const links = navigationData?.links;
 
+    const daysDisplay = daysLeft !== null && daysLeft !== undefined
+        ? String(Math.max(0, daysLeft))
+        : '—';
+
     return (
         <>
-            <StatusBar barStyle="light-content" backgroundColor={colors.background} />
-            <SafeAreaView style={styles.container} edges={['top']}>
+            <StatusBar barStyle="light-content" backgroundColor="#06060E" />
+            <SafeAreaView style={styles.root} edges={['top']}>
 
-                {/* ── HEADER ── */}
-                <View style={styles.header}>
+                {/* TOP NAV */}
+                <View style={styles.topNav}>
                     <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={18} color={colors.textPrimary} />
+                        <Ionicons name="arrow-back" size={16} color="#E0E0EC" />
                     </TouchableOpacity>
-                    <Text style={styles.headerLabel}>EXAM DETAILS</Text>
-                    <View style={{ width: 36 }} />
+                    {isOffline && (
+                        <View style={styles.offlinePill}>
+                            <Ionicons name="cloud-offline-outline" size={11} color="#FFB800" />
+                            <Text style={styles.offlinePillText}>Offline</Text>
+                        </View>
+                    )}
                 </View>
-
-                {/* ── OFFLINE BANNER ── */}
-                {isOffline && (
-                    <View style={styles.offlineBanner}>
-                        <Ionicons name="cloud-offline-outline" size={14} color={colors.neonAmber} />
-                        <Text style={styles.offlineBannerText}>
-                            Offline mode — showing saved exam data
-                        </Text>
-                    </View>
-                )}
 
                 <ScrollView showsVerticalScrollIndicator={false}>
 
-                    {/* ── EXAM NAME + STATS ── */}
-                    <View style={styles.heroCard}>
-                        <Text style={styles.examName}>{currentExam.exam_name}</Text>
-                        <View style={styles.heroAccentLine} />
-                        <View style={styles.statsBlock}>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statBig}>
-                                    {currentExam.exam_date
-                                        ? new Date(currentExam.exam_date).toLocaleDateString('en-IN', {
-                                            day: 'numeric', month: 'short',
-                                        })
-                                        : '—'}
+                    {/* ── EXAM NAME ── */}
+                    <View style={styles.heroWrap}>
+                        <Text style={styles.heroExamName}>{currentExam.exam_name}</Text>
+
+                        {/* ── HERO CARD ── */}
+                        <View style={styles.heroCard}>
+
+                            {/* Left — days number */}
+                            <View style={styles.heroLeft}>
+                                <Text style={[styles.heroDaysNum, { color: accent }]}>
+                                    {daysDisplay}
                                 </Text>
-                                <Text style={styles.statSub}>DATE</Text>
+                                <Text style={[styles.heroDaysWord, { color: accent }]}>
+                                    {daysLeft === 0 ? 'TODAY' : daysLeft === 1 ? 'DAY LEFT' : 'DAYS LEFT'}
+                                </Text>
+
                             </View>
-                            <View style={styles.statDivider} />
-                            <View style={styles.statItem}>
-                                <Text style={styles.statBig}>
-                                    {currentExam.reporting_time?.slice(0, 5) ?? '—'}
-                                </Text>
-                                <Text style={styles.statSub}>REPORT BY</Text>
-                            </View>
-                            <View style={styles.statDivider} />
-                            <View style={styles.statItem}>
-                                <Text style={[styles.statBig, { color: colors.primary }]}>
-                                    {currentExam.gate_closing_time?.slice(0, 5) ?? '—'}
-                                </Text>
-                                <Text style={styles.statSub}>GATE CLOSES</Text>
+
+                            {/* Divider */}
+                            <View style={styles.heroCardDivider} />
+
+                            {/* Right — timings */}
+                            <View style={styles.heroRight}>
+                                <View style={styles.heroTimeItem}>
+                                    <Text style={styles.heroTimeKey}>Date</Text>
+                                    <Text style={styles.heroTimeVal}>
+                                        {currentExam.exam_date
+                                            ? new Date(currentExam.exam_date).toLocaleDateString('en-IN', {
+                                                day: 'numeric', month: 'short', year: 'numeric'
+                                            })
+                                            : '—'}
+                                    </Text>
+                                </View>
+                                <View style={styles.heroTimeSep} />
+                                <View style={styles.heroTimeItem}>
+                                    <Text style={styles.heroTimeKey}>Start Time</Text>
+                                    <Text style={styles.heroTimeVal}>
+                                        {currentExam.reporting_time?.slice(0, 5) ?? '—'}
+                                    </Text>
+                                </View>
+                                <View style={styles.heroTimeSep} />
+                                <View style={styles.heroTimeItem}>
+                                    <Text style={styles.heroTimeKey}>End Time</Text>
+                                    <Text style={styles.heroTimeVal}>
+                                        {currentExam.gate_closing_time?.slice(0, 5) ?? '—'}
+                                    </Text>
+                                </View>
                             </View>
                         </View>
                     </View>
 
-                    {/* ── DETAILS LIST ── */}
-                    <View style={styles.detailsCard}>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailKey}>Roll Number</Text>
-                            <Text style={styles.detailVal}>{currentExam.roll_number ?? '—'}</Text>
+                    {/* ── ROLL NUMBER ── */}
+                    <View style={styles.rollCard}>
+                        <View>
+                            <Text style={styles.rollKey}>Roll Number</Text>
+                            <Text style={styles.rollVal}>{currentExam.roll_number ?? '—'}</Text>
                         </View>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailKey}>Exam Center</Text>
-                            <Text style={styles.detailVal} numberOfLines={2}>
-                                {currentExam.center_name ?? '—'}
-                            </Text>
+                        <View style={styles.rollIconBox}>
+                            <Ionicons name="barcode-outline" size={20} color="#52526A" />
                         </View>
-                        <View style={styles.detailItemRow}>
-                            <View style={styles.detailHalf}>
-                                <Text style={styles.detailKey}>City</Text>
-                                <Text style={styles.detailVal}>{currentExam.center_city ?? '—'}</Text>
+                    </View>
+
+                    {/* ── EXAM CENTER ── */}
+                    <View style={styles.section}>
+                        <Text style={styles.sectionLabel}>EXAM CENTER</Text>
+                        <View style={styles.card}>
+                            <Text style={styles.centerName}>{currentExam.center_name ?? '—'}</Text>
+                            <View style={styles.centerCityRow}>
+                                <Ionicons name="location-outline" size={13} color="#C41E3A" />
+                                <Text style={styles.centerCity}>{currentExam.center_city ?? '—'}</Text>
                             </View>
-                            <View style={styles.detailHalfDivider} />
+                            {currentExam.center_address && (
+                                <Text style={styles.centerAddress}>{currentExam.center_address}</Text>
+                            )}
                             <TouchableOpacity
-                                style={styles.detailHalf}
-                                onPress={() => openLink(links?.google_maps || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(currentExam.center_address)}`)}
+                                style={styles.mapsBtn}
+                                onPress={() => openLink(
+                                    links?.google_maps ||
+                                    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                                        (currentExam.center_address || '') + ' ' + (currentExam.center_city || '')
+                                    )}`
+                                )}
+                                activeOpacity={0.88}
                             >
-                                <Text style={styles.detailKey}>Address</Text>
-                                <Text style={[styles.detailVal, { color: colors.textSecondary }]} numberOfLines={2}>
-                                    {currentExam.center_address ?? '—'}
-                                </Text>
-                                <Text style={styles.detailLink}>Open in Maps →</Text>
+                                <Ionicons name="map-outline" size={14} color="#fff" />
+                                <Text style={styles.mapsBtnText}>Open in Google Maps</Text>
+                                <Ionicons name="arrow-forward" size={13} color="#fff" />
                             </TouchableOpacity>
                         </View>
                     </View>
 
                     {/* ── GET THERE ── */}
-                    <Text style={styles.sectionLabel}>GET THERE</Text>
+                    <View style={styles.section}>
+                        <Text style={styles.sectionLabel}>GET THERE</Text>
 
-                    {/* Navigation Stats Card — shown after directions are fetched */}
-                    {nav && (
-                        <View style={styles.navStatsCard}>
-                            <View style={styles.navStatItem}>
-                                <Ionicons name="navigate" size={18} color={colors.primary} />
-                                <Text style={styles.navStatBig}>{nav.distance}</Text>
-                                <Text style={styles.navStatLabel}>DISTANCE</Text>
-                            </View>
-                            <View style={styles.navStatDivider} />
-                            <View style={styles.navStatItem}>
-                                <Ionicons name="time-outline" size={18} color={colors.neonAmber} />
-                                <Text style={[styles.navStatBig, { color: colors.neonAmber }]}>
-                                    {nav.duration_in_traffic}
-                                </Text>
-                                <Text style={styles.navStatLabel}>WITH TRAFFIC</Text>
-                            </View>
-                            <View style={styles.navStatDivider} />
-                            <View style={styles.navStatItem}>
-                                <Ionicons name="car-outline" size={18} color={colors.neonGreen} />
-                                <Text style={[styles.navStatBig, { color: colors.neonGreen }]}>
-                                    {nav.duration}
-                                </Text>
-                                <Text style={styles.navStatLabel}>WITHOUT</Text>
-                            </View>
-                        </View>
-                    )}
-
-                    {/* Navigation error */}
-                    {navigationError && (
-                        <View style={styles.navErrorCard}>
-                            <Ionicons name="warning-outline" size={16} color={colors.neonAmber} />
-                            <Text style={styles.navErrorText}>{navigationError}</Text>
-                        </View>
-                    )}
-
-                    <View style={styles.transportGrid}>
-
-                        {/* Get Directions button — becomes Open in Maps after fetch */}
-                        <TouchableOpacity
-                            style={styles.transportMainBtn}
-                            onPress={() => nav
-                                ? openLink(links?.google_maps)
-                                : handleGetDirections()
-                            }
-                            activeOpacity={0.85}
-                        >
-                            <View style={styles.transportMainLeft}>
-                                <View style={styles.transportMainIcon}>
-                                    {navigationLoading ? (
-                                        <ActivityIndicator size="small" color={colors.white} />
-                                    ) : (
-                                        <Ionicons name="navigate" size={20} color={colors.white} />
-                                    )}
-                                </View>
-                                <View>
-                                    <Text style={styles.transportMainTitle}>
-                                        {navigationLoading
-                                            ? 'Getting directions...'
-                                            : nav
-                                                ? 'Open in Google Maps'
-                                                : 'Get Directions'}
-                                    </Text>
-                                    <Text style={styles.transportMainSub}>
-                                        {navigationLoading
-                                            ? 'Checking live traffic'
-                                            : nav
-                                                ? `${nav.distance} · ${nav.duration_in_traffic}`
-                                                : currentExam.center_city ?? 'Exam Center'}
-                                    </Text>
-                                </View>
-                            </View>
-                            {!navigationLoading && (
-                                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-                            )}
-                        </TouchableOpacity>
-
-                        {/* Cab shortcuts — use real coordinates if available */}
-                        <View style={styles.transportSmallRow}>
-                            <TouchableOpacity
-                                style={styles.transportSmallBtn}
-                                onPress={() => openLink(links?.uber || 'https://m.uber.com/ul/')}
-                                activeOpacity={0.85}
-                            >
-                                <Text style={styles.transportSmallEmoji}>🚗</Text>
-                                <Text style={styles.transportSmallLabel}>Uber</Text>
-                                {links?.uber && (
-                                    <View style={styles.activeDot} />
-                                )}
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.transportSmallBtn}
-                                onPress={() => openLink(links?.ola || 'https://book.olacabs.com/')}
-                                activeOpacity={0.85}
-                            >
-                                <Text style={styles.transportSmallEmoji}>🛺</Text>
-                                <Text style={styles.transportSmallLabel}>Ola</Text>
-                                {links?.ola && (
-                                    <View style={styles.activeDot} />
-                                )}
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.transportSmallBtn}
-                                onPress={() => openLink(links?.rapido || 'https://rapido.bike/')}
-                                activeOpacity={0.85}
-                            >
-                                <Text style={styles.transportSmallEmoji}>🏍️</Text>
-                                <Text style={styles.transportSmallLabel}>Rapido</Text>
-                                {links?.rapido && (
-                                    <View style={styles.activeDot} />
-                                )}
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* Hint text — only shown before directions are fetched */}
-                        {!nav && !navigationLoading && (
-                            <View style={styles.navHintRow}>
-                                <Ionicons name="information-circle-outline" size={13} color={colors.textMuted} />
-                                <Text style={styles.navHintText}>
-                                    Tap "Get Directions" to see live distance and travel time to your exam center
-                                </Text>
+                        {nav && (
+                            <View style={styles.navStatsCard}>
+                                {[
+                                    { label: 'DISTANCE', val: nav.distance, color: '#E8E8F0' },
+                                    { label: 'DRIVE TIME', val: nav.duration, color: '#00E676' },
+                                    { label: 'W/ TRAFFIC', val: nav.duration_in_traffic, color: '#FFB800' },
+                                ].map((s, i, arr) => (
+                                    <View key={i} style={{ flex: 1, flexDirection: 'row' }}>
+                                        <View style={styles.navStatItem}>
+                                            <Text style={[styles.navStatVal, { color: s.color }]}>{s.val}</Text>
+                                            <Text style={styles.navStatKey}>{s.label}</Text>
+                                        </View>
+                                        {i < arr.length - 1 && <View style={styles.navStatSep} />}
+                                    </View>
+                                ))}
                             </View>
                         )}
 
+                        {navigationError && (
+                            <View style={styles.navError}>
+                                <Ionicons name="warning-outline" size={13} color="#FFB800" />
+                                <Text style={styles.navErrorText}>{navigationError}</Text>
+                            </View>
+                        )}
+
+                        <TouchableOpacity
+                            style={styles.directionsBtn}
+                            onPress={() => nav ? openLink(links?.google_maps) : handleGetDirections()}
+                            activeOpacity={0.88}
+                        >
+                            <View style={styles.dirBtnIcon}>
+                                {navigationLoading
+                                    ? <ActivityIndicator size="small" color="#fff" />
+                                    : <Ionicons name="navigate" size={19} color="#fff" />
+                                }
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.dirBtnTitle}>
+                                    {navigationLoading ? 'Getting directions...'
+                                        : nav ? 'Open in Google Maps'
+                                            : 'Get Directions'}
+                                </Text>
+                                <Text style={styles.dirBtnSub}>
+                                    {navigationLoading ? 'Using your GPS'
+                                        : nav ? `${nav.distance} · ${nav.duration_in_traffic} with traffic`
+                                            : `To ${currentExam.center_city ?? 'exam center'} · Tap for live ETA`}
+                                </Text>
+                            </View>
+                            {!navigationLoading && (
+                                <Ionicons name="chevron-forward" size={14} color="#38384A" />
+                            )}
+                        </TouchableOpacity>
+
+                        <View style={styles.cabRow}>
+                            {[
+                                { label: 'Uber', icon: 'car-outline', color: '#4D9FFF', bg: 'rgba(77,159,255,0.1)', url: links?.uber || 'https://m.uber.com/ul/' },
+                                { label: 'Ola', icon: 'car-sport-outline', color: '#00E676', bg: 'rgba(0,230,118,0.1)', url: links?.ola || 'https://book.olacabs.com/' },
+                                { label: 'Rapido', icon: 'bicycle-outline', color: '#FFB800', bg: 'rgba(255,184,0,0.1)', url: links?.rapido || 'https://rapido.bike/' },
+                            ].map((cab) => (
+                                <TouchableOpacity key={cab.label} style={styles.cabBtn} onPress={() => openLink(cab.url)} activeOpacity={0.85}>
+                                    <View style={[styles.cabIcon, { backgroundColor: cab.bg }]}>
+                                        <Ionicons name={cab.icon} size={19} color={cab.color} />
+                                    </View>
+                                    <Text style={styles.cabLabel}>{cab.label}</Text>
+                                    {links && <View style={[styles.cabDot, { backgroundColor: cab.color }]} />}
+                                </TouchableOpacity>
+                            ))}
+                        </View>
                     </View>
 
-                    {/* ── CHECKLIST ── */}
+                    {/* ── CHECKLIST PREVIEW ── */}
                     {totalCount > 0 && (
-                        <>
+                        <View style={styles.section}>
                             <Text style={styles.sectionLabel}>CHECKLIST</Text>
-                            <TouchableOpacity
-                                style={styles.checklistCard}
-                                onPress={() => router.push(`/exam/checklist/${id}`)}
-                                activeOpacity={0.85}
-                            >
-                                <View style={styles.checklistNumBox}>
-                                    <Text style={styles.checklistNum}>{checkedCount}</Text>
-                                    <View style={styles.checklistNumDivider} />
-                                    <Text style={styles.checklistDen}>{totalCount}</Text>
-                                </View>
-                                <View style={styles.checklistInfo}>
-                                    <Text style={styles.checklistTitle}>
-                                        {checkedCount === totalCount
-                                            ? 'All set for exam day! ✓'
-                                            : `${totalCount - checkedCount} items left to pack`}
+                            <TouchableOpacity style={styles.checklistCard} onPress={() => router.push(`/exam/checklist/${id}`)} activeOpacity={0.85}>
+                                <View style={styles.checklistLeft}>
+                                    <Text style={[styles.checklistBigNum, { color: allDone ? '#00E676' : '#F0F0F8' }]}>
+                                        {checkedCount}
                                     </Text>
-                                    <View style={styles.progressTrack}>
-                                        <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
+                                    <View style={styles.checklistDivLine} />
+                                    <Text style={styles.checklistSmallNum}>{totalCount}</Text>
+                                </View>
+                                <View style={{ flex: 1, gap: 8 }}>
+                                    <Text style={styles.checklistStatus}>
+                                        {allDone ? 'All items packed ✓' : `${totalCount - checkedCount} of ${totalCount} items left`}
+                                    </Text>
+                                    <View style={styles.checklistBar}>
+                                        <View style={[styles.checklistBarFill, {
+                                            width: `${progressPercent}%`,
+                                            backgroundColor: allDone ? '#00E676' : '#C41E3A',
+                                        }]} />
                                     </View>
-                                    <Text style={styles.checklistHint}>Tap to open checklist →</Text>
+                                    <Text style={styles.checklistCta}>Open full checklist →</Text>
                                 </View>
                             </TouchableOpacity>
-                        </>
+                        </View>
                     )}
 
                     {/* ── NOT ALLOWED ── */}
-                    <Text style={styles.sectionLabel}>NOT ALLOWED IN HALL</Text>
-                    <View style={styles.notAllowedCard}>
-                        {[
-                            { icon: '📵', label: 'Mobile Phone' },
-                            { icon: '⌚', label: 'Smartwatch' },
-                            { icon: '🧮', label: 'Calculator' },
-                            { icon: '🎧', label: 'Bluetooth devices' },
-                            { icon: '🎒', label: 'Bags or pouches' },
-                            { icon: '📄', label: 'Loose papers' },
-                        ].map((item, i, arr) => (
-                            <View key={item.label}>
-                                <View style={styles.notAllowedRow}>
-                                    <Text style={styles.notAllowedEmoji}>{item.icon}</Text>
-                                    <Text style={styles.notAllowedText}>{item.label}</Text>
-                                    <View style={styles.notAllowedBadge}>
-                                        <Text style={styles.notAllowedBadgeText}>NOT ALLOWED</Text>
+                    <View style={styles.section}>
+                        <Text style={styles.sectionLabel}>NOT ALLOWED IN HALL</Text>
+                        <View style={styles.notAllowedGrid}>
+                            {[
+                                { icon: 'phone-portrait-outline', label: 'Mobile' },
+                                { icon: 'watch-outline', label: 'Smartwatch' },
+                                { icon: 'calculator-outline', label: 'Calculator' },
+                                { icon: 'bluetooth-outline', label: 'Bluetooth' },
+                                { icon: 'bag-outline', label: 'Bags' },
+                                { icon: 'document-outline', label: 'Loose Papers' },
+                            ].map((item) => (
+                                <View key={item.label} style={styles.notAllowedTile}>
+                                    <View style={styles.notAllowedIconBox}>
+                                        <Ionicons name={item.icon} size={18} color="#C41E3A" />
                                     </View>
+                                    <Text style={styles.notAllowedLabel}>{item.label}</Text>
                                 </View>
-                                {i < arr.length - 1 && <View style={styles.rowDivider} />}
-                            </View>
-                        ))}
+                            ))}
+                        </View>
                     </View>
 
-                    <View style={{ height: 40 }} />
+                    <View style={{ height: 48 }} />
                 </ScrollView>
             </SafeAreaView>
         </>
@@ -362,422 +337,155 @@ export default function ExamDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.background,
-    },
-    loadingScreen: {
-        flex: 1,
-        backgroundColor: colors.background,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    loadingText: {
-        color: colors.textMuted,
-        fontSize: typography.base,
-    },
+    root: { flex: 1, backgroundColor: '#06060E' },
+    loadingScreen: { flex: 1, backgroundColor: '#06060E', justifyContent: 'center', alignItems: 'center', gap: 10 },
+    loadingText: { fontSize: 13, color: '#38384A', fontWeight: '500' },
 
-    // Header
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingVertical: 14,
+    topNav: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4,
     },
     backBtn: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        backgroundColor: colors.surface,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: colors.border,
+        width: 36, height: 36, borderRadius: 10,
+        backgroundColor: '#0F0F1E', borderWidth: 1, borderColor: '#1A1A2E',
+        justifyContent: 'center', alignItems: 'center',
     },
-    headerLabel: {
-        fontSize: 11,
-        fontWeight: typography.bold,
-        color: colors.textMuted,
-        letterSpacing: 2,
+    offlinePill: {
+        flexDirection: 'row', alignItems: 'center', gap: 5,
+        backgroundColor: 'rgba(255,184,0,0.08)', borderRadius: 20,
+        paddingHorizontal: 10, paddingVertical: 5,
+        borderWidth: 1, borderColor: 'rgba(255,184,0,0.2)',
     },
+    offlinePillText: { fontSize: 10, color: '#FFB800', fontWeight: '600' },
 
-    // Hero
+    // ── HERO ──
+    heroWrap: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20, gap: 16 },
+    heroExamName: {
+        fontSize: 22, fontWeight: '800', color: '#F5F5FA',
+        letterSpacing: -0.5, lineHeight: 28,
+    },
     heroCard: {
-        marginHorizontal: 20,
-        backgroundColor: colors.surface,
-        borderRadius: 18,
-        padding: 20,
-        marginBottom: 10,
-        borderWidth: 1,
-        borderColor: colors.border,
-        borderLeftWidth: 3,
-        borderLeftColor: colors.primary,
+        flexDirection: 'row', backgroundColor: '#0C0C1A',
+        borderRadius: 18, borderWidth: 1, borderColor: '#1A1A2E',
+        overflow: 'hidden', minHeight: 170,
     },
-    heroAccentLine: {
-        height: 1,
-        backgroundColor: colors.border,
-        marginVertical: 16,
+    heroLeft: {
+        flex: 1, padding: 18, justifyContent: 'center', gap: 6,
     },
-    examName: {
-        fontSize: typography.xl,
-        fontWeight: typography.black,
-        color: colors.textPrimary,
-        letterSpacing: -0.5,
-        lineHeight: 30,
+    heroDaysNum: {
+        fontSize: 64, fontWeight: '900', letterSpacing: -3, lineHeight: 68,
     },
-    statsBlock: {
-        flexDirection: 'row',
-        backgroundColor: colors.surfaceRaised,
-        borderRadius: 12,
-        padding: 14,
+    heroDaysWord: {
+        fontSize: 10, fontWeight: '800', letterSpacing: 1.5,
     },
-    statItem: {
-        flex: 1,
-        alignItems: 'center',
+    urgencyChip: {
+        alignSelf: 'flex-start', borderRadius: 5, borderWidth: 1,
+        paddingHorizontal: 7, paddingVertical: 3, marginTop: 4,
     },
-    statBig: {
-        fontSize: typography.md,
-        fontWeight: typography.bold,
-        color: colors.textPrimary,
-        marginBottom: 4,
+    urgencyText: { fontSize: 8, fontWeight: '800', letterSpacing: 1 },
+    heroCardDivider: { width: 1, backgroundColor: '#1A1A2E' },
+    heroRight: { flex: 1.1, padding: 16, justifyContent: 'center' },
+    heroTimeItem: { paddingVertical: 10, gap: 3 },
+    heroTimeSep: { height: 1, backgroundColor: '#141428' },
+    heroTimeKey: { fontSize: 10, color: '#38384A', fontWeight: '600', letterSpacing: 0.3 },
+    heroTimeVal: { fontSize: 15, fontWeight: '700', color: '#E8E8F0', letterSpacing: -0.2 },
+
+    // ── ROLL ──
+    rollCard: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        marginHorizontal: 20, marginBottom: 20,
+        backgroundColor: '#0C0C1A', borderRadius: 14, borderWidth: 1, borderColor: '#1A1A2E',
+        paddingVertical: 14, paddingHorizontal: 18,
     },
-    statSub: {
-        fontSize: 9,
-        fontWeight: typography.bold,
-        color: colors.textMuted,
-        letterSpacing: 1,
-    },
-    statDivider: {
-        width: 1,
-        backgroundColor: colors.border,
+    rollKey: { fontSize: 10, color: '#38384A', fontWeight: '600', letterSpacing: 0.5, marginBottom: 4 },
+    rollVal: { fontSize: 17, fontWeight: '700', color: '#E8E8F0', letterSpacing: 0.5 },
+    rollIconBox: {
+        width: 36, height: 36, borderRadius: 10, backgroundColor: '#141428',
+        justifyContent: 'center', alignItems: 'center',
     },
 
-    // Details card
-    detailsCard: {
-        marginHorizontal: 20,
-        backgroundColor: colors.surface,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
-        marginBottom: 24,
-        overflow: 'hidden',
-    },
-    detailItem: {
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.border,
-    },
-    detailItemRow: {
-        flexDirection: 'row',
-    },
-    detailHalf: {
-        flex: 1,
-        padding: 16,
-    },
-    detailHalfDivider: {
-        width: 1,
-        backgroundColor: colors.border,
-    },
-    detailKey: {
-        fontSize: 10,
-        fontWeight: typography.bold,
-        color: colors.textMuted,
-        letterSpacing: 1.5,
-        marginBottom: 6,
-    },
-    detailVal: {
-        fontSize: typography.sm,
-        color: colors.textPrimary,
-        fontWeight: typography.semibold,
-        lineHeight: 20,
-    },
-    detailLink: {
-        fontSize: 10,
-        color: colors.primary,
-        fontWeight: typography.bold,
-        marginTop: 6,
-        letterSpacing: 0.3,
-    },
+    // ── SECTIONS ──
+    section: { paddingHorizontal: 20, marginBottom: 22 },
+    sectionLabel: { fontSize: 9, fontWeight: '700', color: '#38384A', letterSpacing: 2.5, marginBottom: 10 },
 
-    // Section label
-    sectionLabel: {
-        fontSize: 10,
-        fontWeight: typography.bold,
-        color: colors.textMuted,
-        letterSpacing: 2,
-        paddingHorizontal: 20,
-        marginBottom: 10,
+    // ── CARDS ──
+    card: {
+        backgroundColor: '#0C0C1A', borderRadius: 16,
+        borderWidth: 1, borderColor: '#1A1A2E', padding: 18, gap: 10,
     },
+    centerName: { fontSize: 16, fontWeight: '700', color: '#F0F0F8', letterSpacing: -0.3, lineHeight: 22 },
+    centerCityRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    centerCity: { fontSize: 13, color: '#72728A', fontWeight: '500' },
+    centerAddress: { fontSize: 12, color: '#38384A', fontWeight: '500', lineHeight: 18 },
+    mapsBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 8,
+        backgroundColor: '#C41E3A', borderRadius: 10,
+        paddingVertical: 12, paddingHorizontal: 16, marginTop: 4,
+    },
+    mapsBtnText: { fontSize: 13, fontWeight: '700', color: '#fff', flex: 1 },
 
-    // Navigation stats card
+    // ── NAV ──
     navStatsCard: {
-        marginHorizontal: 20,
-        backgroundColor: colors.surface,
-        borderRadius: 16,
-        padding: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: colors.borderBright,
-        borderLeftWidth: 3,
-        borderLeftColor: colors.primary,
-        marginBottom: 10,
+        flexDirection: 'row', backgroundColor: '#0C0C1A',
+        borderRadius: 14, borderWidth: 1, borderColor: '#1A1A2E',
+        paddingVertical: 16, marginBottom: 10,
     },
-    navStatItem: {
-        flex: 1,
-        alignItems: 'center',
-        gap: 4,
+    navStatItem: { flex: 1, alignItems: 'center', gap: 5 },
+    navStatVal: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
+    navStatKey: { fontSize: 8, fontWeight: '700', color: '#323244', letterSpacing: 1, textAlign: 'center' },
+    navStatSep: { width: 1, backgroundColor: '#1A1A2E' },
+    navError: {
+        flexDirection: 'row', alignItems: 'center', gap: 8,
+        backgroundColor: 'rgba(255,184,0,0.06)', borderRadius: 10, padding: 12,
+        borderWidth: 1, borderColor: 'rgba(255,184,0,0.15)', marginBottom: 10,
     },
-    navStatBig: {
-        fontSize: typography.sm,
-        fontWeight: typography.bold,
-        color: colors.textPrimary,
-        textAlign: 'center',
+    navErrorText: { fontSize: 11, color: '#FFB800', flex: 1, fontWeight: '500' },
+    directionsBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 14,
+        backgroundColor: '#0C0C1A', borderRadius: 14, borderWidth: 1, borderColor: '#1A1A2E',
+        padding: 14, marginBottom: 10,
     },
-    navStatLabel: {
-        fontSize: 9,
-        fontWeight: typography.bold,
-        color: colors.textMuted,
-        letterSpacing: 1,
+    dirBtnIcon: {
+        width: 44, height: 44, borderRadius: 12, backgroundColor: '#C41E3A',
+        justifyContent: 'center', alignItems: 'center',
     },
-    navStatDivider: {
-        width: 1,
-        height: 40,
-        backgroundColor: colors.border,
+    dirBtnTitle: { fontSize: 14, fontWeight: '700', color: '#E8E8F0', marginBottom: 2 },
+    dirBtnSub: { fontSize: 11, color: '#52526A', fontWeight: '500' },
+    cabRow: { flexDirection: 'row', gap: 10 },
+    cabBtn: {
+        flex: 1, backgroundColor: '#0C0C1A', borderRadius: 13,
+        borderWidth: 1, borderColor: '#1A1A2E',
+        paddingVertical: 14, alignItems: 'center', gap: 8, position: 'relative',
     },
+    cabIcon: { width: 42, height: 42, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    cabLabel: { fontSize: 12, fontWeight: '600', color: '#C8C8D8' },
+    cabDot: { position: 'absolute', top: 8, right: 8, width: 6, height: 6, borderRadius: 3 },
 
-    // Navigation error
-    navErrorCard: {
-        marginHorizontal: 20,
-        backgroundColor: 'rgba(255,184,0,0.08)',
-        borderRadius: 12,
-        padding: 12,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        borderWidth: 1,
-        borderColor: 'rgba(255,184,0,0.2)',
-        marginBottom: 10,
-    },
-    navErrorText: {
-        fontSize: typography.xs,
-        color: colors.neonAmber,
-        flex: 1,
-        fontWeight: typography.medium,
-    },
-
-    // Transport
-    transportGrid: {
-        marginHorizontal: 20,
-        gap: 8,
-        marginBottom: 24,
-    },
-    transportMainBtn: {
-        backgroundColor: colors.surface,
-        borderRadius: 14,
-        padding: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        borderWidth: 1,
-        borderColor: colors.border,
-    },
-    transportMainLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 14,
-    },
-    transportMainIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        backgroundColor: colors.primary,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    transportMainTitle: {
-        fontSize: typography.sm,
-        fontWeight: typography.bold,
-        color: colors.textPrimary,
-        marginBottom: 2,
-    },
-    transportMainSub: {
-        fontSize: 11,
-        color: colors.textMuted,
-        fontWeight: typography.medium,
-    },
-    transportSmallRow: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    transportSmallBtn: {
-        flex: 1,
-        backgroundColor: colors.surface,
-        borderRadius: 14,
-        paddingVertical: 14,
-        alignItems: 'center',
-        gap: 6,
-        borderWidth: 1,
-        borderColor: colors.border,
-    },
-    transportSmallEmoji: {
-        fontSize: 24,
-    },
-    transportSmallLabel: {
-        fontSize: 11,
-        fontWeight: typography.semibold,
-        color: colors.textSecondary,
-    },
-    activeDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: colors.neonGreen,
-    },
-
-    // Nav hint
-    navHintRow: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: 6,
-        paddingHorizontal: 4,
-    },
-    navHintText: {
-        fontSize: 11,
-        color: colors.textMuted,
-        flex: 1,
-        lineHeight: 16,
-    },
-
-    // Checklist
+    // ── CHECKLIST ──
     checklistCard: {
-        marginHorizontal: 20,
-        backgroundColor: colors.surface,
-        borderRadius: 16,
-        padding: 18,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 20,
-        borderWidth: 1,
-        borderColor: colors.border,
-        marginBottom: 24,
+        flexDirection: 'row', alignItems: 'center', gap: 20,
+        backgroundColor: '#0C0C1A', borderRadius: 14, borderWidth: 1, borderColor: '#1A1A2E', padding: 18,
     },
-    checklistNumBox: {
-        alignItems: 'center',
-        gap: 2,
-    },
-    checklistNum: {
-        fontSize: typography.xxxl,
-        fontWeight: typography.black,
-        color: colors.textPrimary,
-        lineHeight: 38,
-        letterSpacing: -1,
-    },
-    checklistNumDivider: {
-        width: 24,
-        height: 1.5,
-        backgroundColor: colors.borderBright,
-        borderRadius: 1,
-    },
-    checklistDen: {
-        fontSize: typography.base,
-        fontWeight: typography.bold,
-        color: colors.textMuted,
-    },
-    checklistInfo: {
-        flex: 1,
-        gap: 8,
-    },
-    checklistTitle: {
-        fontSize: typography.sm,
-        fontWeight: typography.semibold,
-        color: colors.textPrimary,
-        lineHeight: 20,
-    },
-    progressTrack: {
-        height: 3,
-        backgroundColor: colors.border,
-        borderRadius: 2,
-        overflow: 'hidden',
-    },
-    progressFill: {
-        height: 3,
-        backgroundColor: colors.neonGreen,
-        borderRadius: 2,
-    },
-    checklistHint: {
-        fontSize: 11,
-        color: colors.primary,
-        fontWeight: typography.bold,
-    },
+    checklistLeft: { alignItems: 'center', gap: 4 },
+    checklistBigNum: { fontSize: 32, fontWeight: '900', letterSpacing: -1, lineHeight: 36 },
+    checklistDivLine: { width: 22, height: 1.5, backgroundColor: '#38384A', borderRadius: 1 },
+    checklistSmallNum: { fontSize: 15, fontWeight: '600', color: '#52526A' },
+    checklistStatus: { fontSize: 13, fontWeight: '600', color: '#C8C8D8', lineHeight: 18 },
+    checklistBar: { height: 3, backgroundColor: '#1A1A2E', borderRadius: 2, overflow: 'hidden' },
+    checklistBarFill: { height: 3, borderRadius: 2 },
+    checklistCta: { fontSize: 11, fontWeight: '700', color: '#C41E3A' },
 
-    // Not allowed
-    notAllowedCard: {
-        marginHorizontal: 20,
-        backgroundColor: colors.surface,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
-        overflow: 'hidden',
-        marginBottom: 24,
+    // ── NOT ALLOWED ──
+    notAllowedGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    notAllowedTile: {
+        width: TILE_W, backgroundColor: '#0C0C1A',
+        borderRadius: 14, borderWidth: 1, borderColor: '#1A1A2E',
+        paddingVertical: 16, alignItems: 'center', gap: 10,
     },
-    notAllowedRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 13,
-        paddingHorizontal: 16,
-        gap: 12,
+    notAllowedIconBox: {
+        width: 38, height: 38, borderRadius: 11,
+        backgroundColor: 'rgba(196,30,58,0.1)',
+        justifyContent: 'center', alignItems: 'center',
     },
-    notAllowedEmoji: {
-        fontSize: 18,
-        width: 28,
-        textAlign: 'center',
-    },
-    notAllowedText: {
-        flex: 1,
-        fontSize: typography.sm,
-        color: colors.textSecondary,
-        fontWeight: typography.medium,
-    },
-    notAllowedBadge: {
-        backgroundColor: colors.primaryDim,
-        borderRadius: 6,
-        paddingHorizontal: 7,
-        paddingVertical: 3,
-        borderWidth: 1,
-        borderColor: colors.primary,
-    },
-    notAllowedBadgeText: {
-        fontSize: 8,
-        fontWeight: typography.bold,
-        color: colors.primary,
-        letterSpacing: 0.5,
-    },
-    rowDivider: {
-        height: 1,
-        backgroundColor: colors.border,
-        marginHorizontal: 16,
-    },
-
-    // Offline banner
-    offlineBanner: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        backgroundColor: 'rgba(255,184,0,0.08)',
-        borderWidth: 1,
-        borderColor: 'rgba(255,184,0,0.2)',
-        borderRadius: 10,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        marginHorizontal: 20,
-        marginBottom: 12,
-    },
-    offlineBannerText: {
-        fontSize: typography.xs,
-        color: colors.neonAmber,
-        fontWeight: typography.medium,
-        flex: 1,
-    },
+    notAllowedLabel: { fontSize: 11, fontWeight: '600', color: '#72728A', textAlign: 'center' },
 });
