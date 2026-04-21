@@ -68,7 +68,7 @@ export default function RootLayout() {
 
                 </Stack>
             </AuthGuard>
-            <StatusBar style="dark" />
+            <StatusBar style="light" />
         </SafeAreaProvider>
     );
 }

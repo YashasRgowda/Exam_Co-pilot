@@ -12,8 +12,8 @@ const colors = {
   primaryGlow: 'rgba(196,30,58,0.12)',
 
   // Neon accents — ONLY for critical info
-  neonGreen: '#00FF87',
-  neonGreenDim: 'rgba(0,255,135,0.08)',
+  neonGreen: '#00E676',
+  neonGreenDim: 'rgba(0,230,118,0.08)',
   neonAmber: '#FFB800',
   neonAmberDim: 'rgba(255,184,0,0.08)',
   neonBlue: '#4D9FFF',
@@ -36,6 +36,7 @@ const colors = {
   white: '#FFFFFF',
   black: '#000000',
   transparent: 'transparent',
+  error: '#C41E3A',
 };
 
 export default colors;

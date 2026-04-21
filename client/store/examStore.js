@@ -42,16 +42,20 @@ const useExamStore = create((set, get) => ({
         const isConnected = netState.isConnected !== false;
 
         if (!isConnected) {
-            // Load from offline storage
+            // Load from offline storage + compute days_remaining locally
             const offlineExams = await offlineStorage.getAllExams();
-            const today = new Date().toISOString().split('T')[0];
-            const upcoming = offlineExams.filter(e => e.exam_date >= today);
-            const past = offlineExams.filter(e => e.exam_date < today);
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const todayStr = today.toISOString().split('T')[0];
+            const withDays = offlineExams.map(exam => {
+                try {
+                    const examDay = new Date(exam.exam_date); examDay.setHours(0, 0, 0, 0);
+                    return { ...exam, days_remaining: Math.ceil((examDay - today) / (1000 * 60 * 60 * 24)) };
+                } catch { return { ...exam, days_remaining: null }; }
+            });
+            const upcoming = withDays.filter(e => e.exam_date >= todayStr);
+            const past = withDays.filter(e => e.exam_date < todayStr);
             set({
-                dashboardData: {
-                    upcoming_exams: upcoming,
-                    past_exams: past,
-                },
+                dashboardData: { upcoming_exams: upcoming, past_exams: past },
                 isOffline: true,
                 isLoading: false,
             });
@@ -75,12 +79,16 @@ const useExamStore = create((set, get) => ({
         const isConnected = netState.isConnected !== false;
 
         if (!isConnected) {
-            // Load from offline storage
+            // Load from offline storage + compute days_remaining locally
             const offlineExam = await offlineStorage.getExam(examId);
             const offlineChecklist = await offlineStorage.getChecklist(examId);
             if (offlineExam) {
+                const today = new Date(); today.setHours(0, 0, 0, 0);
+                const examDay = new Date(offlineExam.exam_date); examDay.setHours(0, 0, 0, 0);
+                const computedDays = offlineExam.exam_date
+                    ? Math.ceil((examDay - today) / (1000 * 60 * 60 * 24)) : null;
                 set({
-                    currentExam: offlineExam,
+                    currentExam: { ...offlineExam, days_remaining: computedDays },
                     currentChecklist: offlineChecklist,
                     isOffline: true,
                     isLoading: false,

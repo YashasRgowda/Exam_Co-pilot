@@ -115,8 +115,8 @@ export default function UploadScreen() {
                             <View style={styles.extractGrid}>
                                 {[
                                     'Exam name & date',
-                                    'Reporting time',
-                                    'Gate closing time',
+                                    'Start Time',
+                                    'End Time',
                                     'Center address',
                                     'Roll number',
                                     'Instructions',

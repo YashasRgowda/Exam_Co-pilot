@@ -48,7 +48,10 @@ export default function ProfileScreen() {
     const [premiumExpanded, setPremiumExpanded] = useState(false);
 
     const fullName = user?.full_name || '';
-    const phone = user?.phone || '';
+    // Supabase stores phone in E.164 format (+91XXXXXXXXXX)
+    // Strip +91 for display since we show '+91' as prefix already
+    const rawPhone = user?.phone || '';
+    const phone = rawPhone.startsWith('+91') ? rawPhone.slice(3) : rawPhone.replace('+', '');
     const isPremium = user?.is_premium || false;
     const avatarUrl = user?.avatar_url || null;
 

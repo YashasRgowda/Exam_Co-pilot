@@ -1,13 +1,9 @@
 // services/notificationService.js
-// Handles Expo push token registration
-// Called after admit card is parsed
-
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import apiClient from './api';
 import API from '../constants/api';
 
-// Configure how notifications appear when app is in foreground
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
         shouldShowAlert: true,
@@ -18,15 +14,11 @@ Notifications.setNotificationHandler({
 
 const notificationService = {
 
-    // Request permission + get Expo push token
-    // Returns token string or null if permission denied
     registerForPushNotifications: async () => {
         try {
-            // Check existing permission
             const { status: existingStatus } = await Notifications.getPermissionsAsync();
             let finalStatus = existingStatus;
 
-            // Ask if not already granted
             if (existingStatus !== 'granted') {
                 const { status } = await Notifications.requestPermissionsAsync();
                 finalStatus = status;
@@ -37,11 +29,10 @@ const notificationService = {
                 return null;
             }
 
-            // Get Expo push token
-            const tokenData = await Notifications.getExpoPushTokenAsync({
-                projectId: 'exampilot',
-            });
-
+            // Note: For production EAS build, add to app.json:
+            // "extra": { "eas": { "projectId": "your-actual-eas-uuid" } }
+            // Then pass: projectId: Constants.expoConfig?.extra?.eas?.projectId
+            const tokenData = await Notifications.getExpoPushTokenAsync();
             return tokenData.data;
 
         } catch (error) {
@@ -50,8 +41,6 @@ const notificationService = {
         }
     },
 
-    // Register token + exam_id with backend
-    // Backend saves scheduled notification times in DB
     registerExamReminders: async (examId) => {
         try {
             const token = await notificationService.registerForPushNotifications();
@@ -63,10 +52,7 @@ const notificationService = {
 
             const response = await apiClient.post(
                 API.ENDPOINTS.REGISTER_PUSH_TOKEN,
-                {
-                    expo_push_token: token,
-                    exam_id: examId,
-                }
+                { expo_push_token: token, exam_id: examId }
             );
 
             console.log('Reminders registered:', response.data);
