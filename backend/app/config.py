@@ -14,14 +14,13 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: str
 
-    # Gemini AI
-    # GEMINI_API_KEY: str
+    # Groq AI (vision model for admit card parsing)
     GROQ_API_KEY: str
 
-    # Google Maps
-    GOOGLE_MAPS_API_KEY: str
+    # Google Maps — optional, navigation uses OpenStreetMap (free, no key needed)
+    GOOGLE_MAPS_API_KEY: str = ""
 
-    # Rate Limiting (Gemini API)
+    # Rate Limiting
     FREE_TIER_DAILY_PARSE_LIMIT: int = 3
     PREMIUM_TIER_DAILY_PARSE_LIMIT: int = 20
 

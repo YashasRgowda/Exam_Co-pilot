@@ -54,7 +54,7 @@ async def send_due_notifications():
                 body = f"{exam_name} is tomorrow. Pack your bag and keep your admit card ready tonight."
             elif notif["notification_type"] == "morning_of":
                 title = "Exam Day! ⏰"
-                body = f"Today is your {exam_name}. Report by {reporting_time}. Check your checklist and leave on time!"
+                body = f"Today is your {exam_name}. Exam starts at {reporting_time}. Check your checklist and leave on time!"
             else:
                 continue
 
