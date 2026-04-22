@@ -5,7 +5,7 @@
 const API = {
   // Your FastAPI backend running locally
   // When testing on simulator, localhost works fine
-  BASE_URL: 'http://192.168.0.3:8000',  // ✅ 8000 is FastAPI port
+  BASE_URL: 'https://exampilot-backend.onrender.com',
 
   // All API endpoint paths
   ENDPOINTS: {
@@ -36,7 +36,6 @@ const API = {
 
     // Navigation
     GET_DIRECTIONS: '/api/v1/navigation/directions',
-    GET_CENTER_INFO: (examId) => `/api/v1/navigation/exam-center-info/${examId}`,
 
     // Notifications
     REGISTER_PUSH_TOKEN: '/api/v1/notifications/register',
