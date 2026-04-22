@@ -12,12 +12,12 @@ logger = setup_logger(__name__)
 
 
 class SendOTPRequest(BaseModel):
-    phone: str  # Format: +919876543210 (E.164 with country code)
+    email: str  # User's email address
 
 
 class VerifyOTPRequest(BaseModel):
-    phone: str
-    token: str  # 6 digit OTP
+    email: str
+    token: str  # 6 digit OTP sent to email
 
 
 class UpdateProfileRequest(BaseModel):
@@ -27,40 +27,42 @@ class UpdateProfileRequest(BaseModel):
 @router.post("/send-otp")
 async def send_otp(payload: SendOTPRequest):
     """
-    Step 1 of login — sends OTP to student's phone number.
-    Phone must be in E.164 format: +919876543210
+    Step 1 of login — sends OTP to student's email.
+    Supabase handles email delivery for free, no Twilio needed.
     """
-    # Validate E.164 format — Supabase requires country code
-    if not payload.phone.startswith("+"):
-        raise BadRequestException("Phone must include country code. Example: +919876543210")
-    if len(payload.phone) < 12:
-        raise BadRequestException("Invalid phone number. Example: +919876543210")
+    if not payload.email or "@" not in payload.email:
+        raise BadRequestException("Please enter a valid email address.")
 
     try:
-        response = supabase.auth.sign_in_with_otp({"phone": payload.phone})
-        logger.info(f"OTP sent to {payload.phone}")
-        return {"success": True, "message": "OTP sent successfully."}
+        response = supabase.auth.sign_in_with_otp({
+            "email": payload.email,
+            "options": {
+                "should_create_user": True,
+            }
+        })
+        logger.info(f"OTP sent to {payload.email}")
+        return {"success": True, "message": "OTP sent to your email."}
     except Exception as e:
         logger.error(f"Failed to send OTP: {e}")
-        raise BadRequestException("Failed to send OTP. Check phone number format. Example: +919876543210")
+        raise BadRequestException("Failed to send OTP. Please check your email address.")
 
 
 @router.post("/verify-otp")
 async def verify_otp(payload: VerifyOTPRequest):
     """
-    Step 2 of login — verifies OTP and returns session tokens.
+    Step 2 of login — verifies email OTP and returns session tokens.
     """
     try:
         response = supabase.auth.verify_otp({
-            "phone": payload.phone,
+            "email": payload.email,
             "token": payload.token,
-            "type": "sms"
+            "type": "email",
         })
 
         if not response.session:
             raise BadRequestException("Invalid or expired OTP.")
 
-        logger.info(f"OTP verified for {payload.phone}")
+        logger.info(f"OTP verified for {payload.email}")
         return {
             "success": True,
             "message": "Login successful.",
@@ -105,7 +107,6 @@ async def upload_avatar(
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user)
 ):
-    """Uploads profile picture to Supabase Storage."""
     user_id = user["sub"]
     allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
     if file.content_type not in allowed_types:
@@ -117,7 +118,9 @@ async def upload_avatar(
     file_path = f"{user_id}/{uuid.uuid4()}.{ext}"
     try:
         try:
-            old_profile = supabase_admin.table("profiles").select("avatar_url").eq("id", user_id).single().execute()
+            old_profile = supabase_admin.table("profiles").select(
+                "avatar_url"
+            ).eq("id", user_id).single().execute()
             if old_profile.data and old_profile.data.get("avatar_url"):
                 old_url = old_profile.data["avatar_url"]
                 old_path = old_url.split("/avatars/")[-1]
@@ -129,7 +132,9 @@ async def upload_avatar(
             file_options={"content-type": file.content_type},
         )
         avatar_url = supabase_admin.storage.from_("avatars").get_public_url(file_path)
-        supabase_admin.table("profiles").update({"avatar_url": avatar_url}).eq("id", user_id).execute()
+        supabase_admin.table("profiles").update(
+            {"avatar_url": avatar_url}
+        ).eq("id", user_id).execute()
         logger.info(f"Avatar uploaded for user {user_id}")
         return {"success": True, "avatar_url": avatar_url}
     except Exception as e:
@@ -141,12 +146,16 @@ async def upload_avatar(
 async def delete_avatar(user: dict = Depends(get_current_user)):
     user_id = user["sub"]
     try:
-        profile = supabase_admin.table("profiles").select("avatar_url").eq("id", user_id).single().execute()
+        profile = supabase_admin.table("profiles").select(
+            "avatar_url"
+        ).eq("id", user_id).single().execute()
         if profile.data and profile.data.get("avatar_url"):
             old_url = profile.data["avatar_url"]
             old_path = old_url.split("/avatars/")[-1]
             supabase_admin.storage.from_("avatars").remove([old_path])
-        supabase_admin.table("profiles").update({"avatar_url": None}).eq("id", user_id).execute()
+        supabase_admin.table("profiles").update(
+            {"avatar_url": None}
+        ).eq("id", user_id).execute()
         return {"success": True, "message": "Avatar deleted successfully."}
     except Exception as e:
         logger.error(f"Avatar delete failed: {e}")
