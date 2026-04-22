@@ -1,17 +1,7 @@
 // app/(auth)/verify.jsx
-// OTP VERIFICATION SCREEN
-// User enters 6 digit OTP received on phone
-// On success → navigates to home screen
-
 import {
-    View,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    StyleSheet,
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
+    View, Text, TextInput, TouchableOpacity, StyleSheet,
+    ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useState } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -22,27 +12,14 @@ import typography from '../../constants/typography';
 
 export default function VerifyScreen() {
     const router = useRouter();
-
-    // Get phone number passed from login screen
-    const { phone } = useLocalSearchParams();
-
-    // Get login action from global auth store
+    const { email } = useLocalSearchParams();
     const { login, isLoading, error, clearError } = useAuthStore();
-
     const [otp, setOtp] = useState('');
 
     const handleVerify = async () => {
-        if (otp.length !== 6) {
-            return;
-        }
-
-        // Call login action in store
-        // It calls verifyOTP → saves token → fetches profile → updates state
-        const result = await login(phone, otp);
-
+        if (otp.length !== 6) return;
+        const result = await login(email, otp);
         if (result.success) {
-            // Auth guard in _layout.jsx will auto redirect to home
-            // But we also push manually for reliability
             router.replace('/(tabs)/home');
         }
     };
@@ -53,25 +30,19 @@ export default function VerifyScreen() {
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.inner}
             >
-                {/* Back button */}
-                <TouchableOpacity
-                    style={styles.backButton}
-                    onPress={() => router.back()}
-                >
+                <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
                     <Text style={styles.backText}>← Back</Text>
                 </TouchableOpacity>
 
-                {/* Header */}
                 <View style={styles.header}>
-                    <Text style={styles.emoji}>📱</Text>
-                    <Text style={styles.title}>Verify OTP</Text>
+                    <Text style={styles.emoji}>📧</Text>
+                    <Text style={styles.title}>Check your email</Text>
                     <Text style={styles.subtitle}>
-                        Enter the 6-digit OTP sent to{'\n'}
-                        <Text style={styles.phone}>{phone}</Text>
+                        We sent a 6-digit OTP to{'\n'}
+                        <Text style={styles.email}>{email}</Text>
                     </Text>
                 </View>
 
-                {/* OTP Input */}
                 <View style={styles.form}>
                     <TextInput
                         style={styles.otpInput}
@@ -80,17 +51,10 @@ export default function VerifyScreen() {
                         keyboardType="number-pad"
                         maxLength={6}
                         value={otp}
-                        onChangeText={(text) => {
-                            setOtp(text);
-                            clearError();
-                        }}
+                        onChangeText={(text) => { setOtp(text); clearError(); }}
                         textAlign="center"
                     />
-
-                    {/* Error from store */}
                     {error ? <Text style={styles.error}>{error}</Text> : null}
-
-                    {/* Verify button */}
                     <TouchableOpacity
                         style={[
                             styles.button,
@@ -99,16 +63,15 @@ export default function VerifyScreen() {
                         onPress={handleVerify}
                         disabled={isLoading || otp.length !== 6}
                     >
-                        {isLoading ? (
-                            <ActivityIndicator color={colors.white} />
-                        ) : (
-                            <Text style={styles.buttonText}>Verify & Login</Text>
-                        )}
+                        {isLoading
+                            ? <ActivityIndicator color={colors.white} />
+                            : <Text style={styles.buttonText}>Verify & Login</Text>
+                        }
                     </TouchableOpacity>
                 </View>
 
                 <Text style={styles.footer}>
-                    For testing use OTP: 123456
+                    Didn't receive it? Check your spam folder
                 </Text>
             </KeyboardAvoidingView>
         </SafeAreaView>
@@ -116,33 +79,16 @@ export default function VerifyScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.background,
-    },
-    inner: {
-        flex: 1,
-        paddingHorizontal: 24,
-        justifyContent: 'center',
-    },
-    backButton: {
-        position: 'absolute',
-        top: 20,
-        left: 24,
-    },
+    container: { flex: 1, backgroundColor: colors.background },
+    inner: { flex: 1, paddingHorizontal: 24, justifyContent: 'center' },
+    backButton: { position: 'absolute', top: 20, left: 24 },
     backText: {
         fontSize: typography.base,
         color: colors.primary,
         fontWeight: typography.medium,
     },
-    header: {
-        alignItems: 'center',
-        marginBottom: 40,
-    },
-    emoji: {
-        fontSize: 56,
-        marginBottom: 12,
-    },
+    header: { alignItems: 'center', marginBottom: 40 },
+    emoji: { fontSize: 56, marginBottom: 12 },
     title: {
         fontSize: typography.xxl,
         fontWeight: typography.bold,
@@ -155,13 +101,8 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         lineHeight: 24,
     },
-    phone: {
-        fontWeight: typography.bold,
-        color: colors.primary,
-    },
-    form: {
-        marginBottom: 24,
-    },
+    email: { fontWeight: typography.bold, color: colors.primary },
+    form: { marginBottom: 24 },
     otpInput: {
         borderWidth: 1.5,
         borderColor: colors.border,
@@ -187,9 +128,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginTop: 8,
     },
-    buttonDisabled: {
-        opacity: 0.5,
-    },
+    buttonDisabled: { opacity: 0.5 },
     buttonText: {
         fontSize: typography.md,
         fontWeight: typography.bold,

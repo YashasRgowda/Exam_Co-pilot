@@ -50,8 +50,8 @@ export default function ProfileScreen() {
     const fullName = user?.full_name || '';
     // Supabase stores phone in E.164 format (+91XXXXXXXXXX)
     // Strip +91 for display since we show '+91' as prefix already
-    const rawPhone = user?.phone || '';
-    const phone = rawPhone.startsWith('+91') ? rawPhone.slice(3) : rawPhone.replace('+', '');
+    const email = user?.email || '';
+
     const isPremium = user?.is_premium || false;
     const avatarUrl = user?.avatar_url || null;
 
@@ -215,7 +215,7 @@ export default function ProfileScreen() {
                                 </TouchableOpacity>
                             )}
 
-                            <Text style={styles.heroPhone}>+91 {phone}</Text>
+                            <Text style={styles.heroPhone}>{email}</Text>
 
                             {isPremium && (
                                 <View style={styles.premiumBadge}>
@@ -311,11 +311,11 @@ export default function ProfileScreen() {
                         <View style={styles.menuCard}>
                             <View style={styles.menuRow}>
                                 <View style={[styles.menuIcon, { backgroundColor: 'rgba(196,30,58,0.09)' }]}>
-                                    <Ionicons name="call-outline" size={14} color="#C41E3A" />
+                                    <Ionicons name="mail-outline" size={14} color="#C41E3A" />
                                 </View>
                                 <View style={styles.menuText}>
-                                    <Text style={styles.menuLabel}>Phone</Text>
-                                    <Text style={styles.menuValue}>+91 {phone}</Text>
+                                    <Text style={styles.menuLabel}>Email</Text>
+                                    <Text style={styles.menuValue}>{email}</Text>
                                 </View>
                             </View>
 

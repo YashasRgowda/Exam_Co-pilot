@@ -2,32 +2,28 @@
 // All authentication related API calls
 // Talks to /api/v1/auth/* endpoints
 
+// services/authService.js
 import apiClient from './api';
 import API from '../constants/api';
 import storage from '../utils/storage';
 
 const authService = {
 
-  // Step 1 of login — sends OTP to phone number
-  // phone format: "+919999999999"
-  sendOTP: async (phone) => {
-    const response = await apiClient.post(API.ENDPOINTS.SEND_OTP, { phone });
+  // Step 1 — sends OTP to email (free via Supabase)
+  sendOTP: async (email) => {
+    const response = await apiClient.post(API.ENDPOINTS.SEND_OTP, { email });
     return response.data;
   },
 
-  // Step 2 of login — verifies OTP and saves token
-  // On success saves token + userId to AsyncStorage
-  verifyOTP: async (phone, token) => {
+  // Step 2 — verifies OTP and saves token
+  verifyOTP: async (email, token) => {
     const response = await apiClient.post(API.ENDPOINTS.VERIFY_OTP, {
-      phone,
+      email,
       token,
     });
     const { access_token, user_id } = response.data;
-
-    // Save token and userId so user stays logged in
     await storage.saveToken(access_token);
     await storage.saveUserId(user_id);
-
     return response.data;
   },
 
@@ -45,15 +41,15 @@ const authService = {
     return response.data;
   },
 
-  // Logout — clears token from storage
+  // Logout
   logout: async () => {
     await storage.clearAll();
   },
 
-  // Check if user is already logged in (app launch)
+  // Check if user is already logged in
   isLoggedIn: async () => {
     const token = await storage.getToken();
-    return !!token; // returns true if token exists
+    return !!token;
   },
 
   // Upload profile picture
@@ -67,9 +63,7 @@ const authService = {
     const response = await apiClient.post(
       API.ENDPOINTS.UPLOAD_AVATAR,
       formData,
-      {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      }
+      { headers: { 'Content-Type': 'multipart/form-data' } }
     );
     return response.data;
   },
@@ -79,8 +73,6 @@ const authService = {
     const response = await apiClient.delete(API.ENDPOINTS.DELETE_AVATAR);
     return response.data;
   },
-
-
 };
 
 export default authService;

@@ -3,6 +3,7 @@
 // First screen user sees when not logged in
 // User enters phone number → OTP is sent
 
+
 import {
     View, Text, TextInput, TouchableOpacity, StyleSheet,
     ActivityIndicator, KeyboardAvoidingView, Platform,
@@ -16,27 +17,25 @@ import typography from '../../constants/typography';
 
 export default function LoginScreen() {
     const router = useRouter();
-    const [phone, setPhone] = useState('');
+    const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
     const handleSendOTP = async () => {
-        if (phone.length < 10) {
-            setError('Please enter a valid 10 digit phone number');
+        if (!email.includes('@') || !email.includes('.')) {
+            setError('Please enter a valid email address');
             return;
         }
         try {
             setLoading(true);
             setError('');
-            // Add +91 country code for India (E.164 format required by Supabase)
-            const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
-            await authService.sendOTP(formattedPhone);
+            await authService.sendOTP(email.trim().toLowerCase());
             router.push({
                 pathname: '/(auth)/verify',
-                params: { phone: formattedPhone },
+                params: { email: email.trim().toLowerCase() },
             });
         } catch (err) {
-            setError('Failed to send OTP. Please check your number.');
+            setError('Failed to send OTP. Please check your email.');
         } finally {
             setLoading(false);
         }
@@ -55,21 +54,17 @@ export default function LoginScreen() {
                 </View>
 
                 <View style={styles.form}>
-                    <Text style={styles.label}>Enter your phone number</Text>
-                    <View style={styles.inputRow}>
-                        <View style={styles.prefix}>
-                            <Text style={styles.prefixText}>+91</Text>
-                        </View>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="9999999999"
-                            placeholderTextColor={colors.textMuted}
-                            keyboardType="phone-pad"
-                            maxLength={10}
-                            value={phone}
-                            onChangeText={(text) => { setPhone(text); setError(''); }}
-                        />
-                    </View>
+                    <Text style={styles.label}>Enter your email address</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="you@example.com"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        value={email}
+                        onChangeText={(text) => { setEmail(text); setError(''); }}
+                    />
                     {error ? <Text style={styles.error}>{error}</Text> : null}
                     <TouchableOpacity
                         style={[styles.button, loading && styles.buttonDisabled]}
@@ -84,7 +79,7 @@ export default function LoginScreen() {
                 </View>
 
                 <Text style={styles.footer}>
-                    We'll send a 6-digit OTP to verify your number
+                    We'll send a 6-digit OTP to your email
                 </Text>
             </KeyboardAvoidingView>
         </SafeAreaView>
@@ -96,23 +91,52 @@ const styles = StyleSheet.create({
     inner: { flex: 1, paddingHorizontal: 24, justifyContent: 'center' },
     header: { alignItems: 'center', marginBottom: 48 },
     emoji: { fontSize: 56, marginBottom: 12 },
-    title: { fontSize: typography.xxxl, fontWeight: typography.bold, color: colors.textPrimary, marginBottom: 8 },
-    subtitle: { fontSize: typography.base, color: colors.textSecondary, textAlign: 'center' },
+    title: {
+        fontSize: typography.xxxl,
+        fontWeight: typography.bold,
+        color: colors.textPrimary,
+        marginBottom: 8,
+    },
+    subtitle: {
+        fontSize: typography.base,
+        color: colors.textSecondary,
+        textAlign: 'center',
+    },
     form: { marginBottom: 24 },
-    label: { fontSize: typography.sm, fontWeight: typography.medium, color: colors.textSecondary, marginBottom: 10 },
-    inputRow: {
-        flexDirection: 'row', borderWidth: 1.5, borderColor: colors.border,
-        borderRadius: 12, overflow: 'hidden', backgroundColor: colors.surface, marginBottom: 8,
+    label: {
+        fontSize: typography.sm,
+        fontWeight: typography.medium,
+        color: colors.textSecondary,
+        marginBottom: 10,
     },
-    prefix: {
-        backgroundColor: colors.primaryGlow, paddingHorizontal: 14,
-        justifyContent: 'center', borderRightWidth: 1, borderRightColor: colors.border,
+    input: {
+        borderWidth: 1.5,
+        borderColor: colors.border,
+        borderRadius: 12,
+        backgroundColor: colors.surface,
+        paddingHorizontal: 16,
+        paddingVertical: 16,
+        fontSize: typography.md,
+        color: colors.textPrimary,
+        marginBottom: 8,
     },
-    prefixText: { fontSize: typography.base, fontWeight: typography.semibold, color: colors.primary },
-    input: { flex: 1, paddingHorizontal: 14, paddingVertical: 16, fontSize: typography.md, color: colors.textPrimary },
-    error: { fontSize: typography.sm, color: colors.error || '#C41E3A', marginBottom: 8 },
-    button: { backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+    error: { fontSize: typography.sm, color: colors.error, marginBottom: 8 },
+    button: {
+        backgroundColor: colors.primary,
+        borderRadius: 12,
+        paddingVertical: 16,
+        alignItems: 'center',
+        marginTop: 8,
+    },
     buttonDisabled: { opacity: 0.6 },
-    buttonText: { fontSize: typography.md, fontWeight: typography.bold, color: colors.white },
-    footer: { fontSize: typography.sm, color: colors.textMuted, textAlign: 'center' },
+    buttonText: {
+        fontSize: typography.md,
+        fontWeight: typography.bold,
+        color: colors.white,
+    },
+    footer: {
+        fontSize: typography.sm,
+        color: colors.textMuted,
+        textAlign: 'center',
+    },
 });
