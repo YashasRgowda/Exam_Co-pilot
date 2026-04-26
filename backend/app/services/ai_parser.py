@@ -169,7 +169,7 @@ STRICT RULES:
         # Strip those if present
         if raw_text.startswith("```"):
             lines = raw_text.split("\n")
-            lines = [l for l in lines if not l.startswith("```")]
+            lines = [line for line in lines if not line.startswith("```")]
             raw_text = "\n".join(lines).strip()
 
         parsed = json.loads(raw_text)
