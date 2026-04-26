@@ -1,24 +1,58 @@
 import groq
 import json
 import base64
+import io
 from app.config import settings
 from app.core.logger import setup_logger
 from app.core.exceptions import InternalServerException
 
 logger = setup_logger(__name__)
 
-# Initialize Groq client once at module level
 client = groq.Groq(api_key=settings.GROQ_API_KEY)
+
+
+def convert_pdf_to_image(pdf_bytes: bytes) -> tuple[bytes, str]:
+    """
+    Converts first page of PDF to JPEG image bytes.
+    Returns (image_bytes, mime_type).
+    """
+    try:
+        import fitz  # PyMuPDF
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        page = doc[0]  # First page only
+        # Render at 2x resolution for better OCR quality
+        mat = fitz.Matrix(2.0, 2.0)
+        pix = page.get_pixmap(matrix=mat)
+        img_bytes = pix.tobytes("jpeg")
+        doc.close()
+        logger.info(f"PDF converted to image: {len(img_bytes)} bytes")
+        return img_bytes, "image/jpeg"
+    except ImportError:
+        raise InternalServerException(
+            "PDF parsing requires PyMuPDF. Please install it: pip install PyMuPDF"
+        )
+    except Exception as e:
+        logger.error(f"PDF conversion failed: {e}")
+        raise InternalServerException(
+            "Failed to read PDF. Please try uploading a JPG or PNG image of your admit card instead."
+        )
 
 
 def parse_admit_card(file_bytes: bytes, mime_type: str) -> dict:
     """
     Sends admit card image to Groq Vision API (Llama 4 Scout).
+    Supports both images (JPG, PNG) and PDFs.
     Extracts all exam details and returns structured JSON.
     Works with JEE, NEET, UPSC, GATE, KCET, Board exams automatically.
     Free tier: 1000 requests/day.
     """
     try:
+        # ── PDF HANDLING ──
+        # Groq vision doesn't support PDF — convert to image first
+        if mime_type == "application/pdf":
+            logger.info("PDF detected — converting to image for Groq vision")
+            file_bytes, mime_type = convert_pdf_to_image(file_bytes)
+
         encoded = base64.standard_b64encode(file_bytes).decode("utf-8")
         data_url = f"data:{mime_type};base64,{encoded}"
 
@@ -72,9 +106,7 @@ STRICT RULES:
                     "content": [
                         {
                             "type": "image_url",
-                            "image_url": {
-                                "url": data_url,
-                            },
+                            "image_url": {"url": data_url},
                         },
                         {
                             "type": "text",
@@ -91,7 +123,6 @@ STRICT RULES:
         raw_text = response.choices[0].message.content.strip()
         logger.info(f"Groq raw response (first 300): {raw_text[:300]}")
 
-        # Clean markdown fences if accidentally present
         if raw_text.startswith("```"):
             raw_text = raw_text.split("```")[1]
             if raw_text.startswith("json"):
@@ -101,25 +132,13 @@ STRICT RULES:
         parsed = json.loads(raw_text)
 
         # ── FIELD MIGRATION ──
-        # Map new field names back to the DB column names the rest of the app expects.
-        # DB columns: reporting_time, gate_closing_time
-        # New parser fields: exam_start_time, exam_end_time, reporting_time
-        #
-        # Logic:
-        #   reporting_time (DB)    = exam_start_time (what the exam paper starts)
-        #   gate_closing_time (DB) = exam_end_time   (when the exam ends)
-        #
-        # We keep the original reporting_time from the admit card in a separate key
-        # for display purposes but do NOT overwrite the start time with it.
-
         exam_start = parsed.get("exam_start_time")
         exam_end = parsed.get("exam_end_time")
-        arrival_time = parsed.get("reporting_time")  # candidate arrival time
+        arrival_time = parsed.get("reporting_time")
 
-        # Map to DB fields
         parsed["reporting_time"] = exam_start        # DB column = exam start time
         parsed["gate_closing_time"] = exam_end       # DB column = exam end time
-        parsed["candidate_arrival_time"] = arrival_time  # extra field, not in DB but useful
+        parsed["candidate_arrival_time"] = arrival_time
 
         logger.info(
             f"Admit card parsed: {parsed.get('exam_name')} | "
@@ -127,6 +146,9 @@ STRICT RULES:
         )
 
         return parsed
+
+    except InternalServerException:
+        raise
 
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON from Groq: {e}")

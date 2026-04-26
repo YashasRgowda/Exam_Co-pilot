@@ -13,3 +13,5 @@ PyJWT
 pytest
 pytest-asyncio
 apscheduler
+
+PyMuPDF
