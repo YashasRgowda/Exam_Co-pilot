@@ -117,7 +117,7 @@ STRICT RULES:
             ],
             max_tokens=2000,
             temperature=0.1,
-            response_format={"type": "json_object"},
+            # response_format removed — causes issues with non-ASCII (Kannada/Hindi) text
         )
 
         raw_text = response.choices[0].message.content.strip()
