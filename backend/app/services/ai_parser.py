@@ -1,7 +1,7 @@
 import groq
 import json
 import base64
-import io
+import fitz  # PyMuPDF
 from app.config import settings
 from app.core.logger import setup_logger
 from app.core.exceptions import InternalServerException
@@ -17,40 +17,59 @@ def convert_pdf_to_image(pdf_bytes: bytes) -> tuple[bytes, str]:
     Returns (image_bytes, mime_type).
     """
     try:
-        import fitz  # PyMuPDF
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        page = doc[0]  # First page only
-        # Render at 2x resolution for better OCR quality
+        page = doc[0]
         mat = fitz.Matrix(2.0, 2.0)
         pix = page.get_pixmap(matrix=mat)
         img_bytes = pix.tobytes("jpeg")
         doc.close()
-        logger.info(f"PDF converted to image: {len(img_bytes)} bytes")
+        logger.info(f"PDF page 1 converted: {len(img_bytes)} bytes")
         return img_bytes, "image/jpeg"
-    except ImportError:
-        raise InternalServerException(
-            "PDF parsing requires PyMuPDF. Please install it: pip install PyMuPDF"
-        )
     except Exception as e:
         logger.error(f"PDF conversion failed: {e}")
         raise InternalServerException(
-            "Failed to read PDF. Please try uploading a JPG or PNG image of your admit card instead."
+            "Failed to read PDF. Please upload a JPG or PNG instead."
         )
+
+
+def convert_pdf_all_pages(pdf_bytes: bytes) -> list[tuple[bytes, str]]:
+    """
+    Converts ALL pages of PDF to JPEG images.
+    KCET has exam timetable on page 1 only but we check all pages.
+    Returns list of (image_bytes, mime_type).
+    """
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        pages = []
+        for i in range(min(len(doc), 3)):  # max 3 pages
+            page = doc[i]
+            mat = fitz.Matrix(2.0, 2.0)
+            pix = page.get_pixmap(matrix=mat)
+            img_bytes = pix.tobytes("jpeg")
+            pages.append((img_bytes, "image/jpeg"))
+            logger.info(f"PDF page {i+1} converted: {len(img_bytes)} bytes")
+        doc.close()
+        return pages
+    except Exception as e:
+        logger.error(f"PDF multi-page conversion failed: {e}")
+        raise InternalServerException("Failed to read PDF pages.")
 
 
 def parse_admit_card(file_bytes: bytes, mime_type: str) -> dict:
     """
-    Sends admit card image to Groq Vision API (Llama 4 Scout).
-    Supports both images (JPG, PNG) and PDFs.
-    Extracts all exam details and returns structured JSON.
-    Works with JEE, NEET, UPSC, GATE, KCET, Board exams automatically.
-    Free tier: 1000 requests/day.
+    Sends admit card to Groq Vision (Llama 4 Scout).
+    Extracts ALL sessions — works for every Indian exam:
+    - Single session: NEET, CLAT, CAT → sessions array with 1 item
+    - Same day multiple papers: JEE Advanced, UPSC Prelims → 2 items
+    - Multi day multi subject: KCET, MHT-CET → 3+ items
+    - Multi day multi paper: UPSC Mains → 9 items
     """
     try:
         # ── PDF HANDLING ──
-        # Groq vision doesn't support PDF — convert to image first
+        # For PDFs, convert page 1 to image
+        # Groq vision does not accept PDF directly
         if mime_type == "application/pdf":
-            logger.info("PDF detected — converting to image for Groq vision")
+            logger.info("PDF detected — converting to image")
             file_bytes, mime_type = convert_pdf_to_image(file_bytes)
 
         encoded = base64.standard_b64encode(file_bytes).decode("utf-8")
@@ -59,43 +78,65 @@ def parse_admit_card(file_bytes: bytes, mime_type: str) -> dict:
         prompt = """
 You are reading an Indian competitive exam admit card / hall ticket.
 
-Your task is to extract specific information from this admit card image.
+Your job is to extract ALL exam sessions from this admit card.
 
-CRITICAL INSTRUCTIONS FOR EXAM TIMINGS:
-- Look for the EXAM TIME or SESSION TIME on the admit card.
-  Example: "Time: 2:30 PM to 5:30 PM" or "09:30 AM to 12:30 PM"
-- "exam_start_time" = the time when the EXAM BEGINS (e.g. 2:30 PM = 14:30)
-- "exam_end_time" = the time when the EXAM ENDS (e.g. 5:30 PM = 17:30)
-- Do NOT confuse "Reporting Time" or "Candidate Arrival Time" with exam start time.
-  Reporting time is when the candidate must arrive at the center (usually 1-2 hours before exam).
-  Exam start time is when the exam paper actually begins.
-- If you see something like "Report at 12:30, Exam: 2:30 PM to 5:30 PM":
-  exam_start_time = "14:30", exam_end_time = "17:30", reporting_time = "12:30"
+WHAT IS A SESSION?
+A session = one exam paper / one subject on a specific date and time.
+Examples:
+- KCET has 3 sessions: Physics (23 Apr 10:30-11:50), Chemistry (23 Apr 14:30-15:50), Maths (24 Apr 10:30-11:50)
+- JEE Advanced has 2 sessions: Paper 1 (morning), Paper 2 (afternoon) same day
+- NEET has 1 session: single paper single day
+- UPSC Prelims has 2 sessions: GS Paper 1 (morning), CSAT (afternoon) same day
+- UPSC Mains has multiple sessions across multiple days
 
-Return ONLY a valid JSON object with these exact keys:
+CRITICAL RULES FOR EXTRACTION:
+1. Look for any table, timetable, or schedule on the admit card
+2. Extract EVERY row in that table as a separate session
+3. Each session must have: date, start_time, end_time
+4. subject_name is optional — use null if not mentioned
+5. session_number starts from 1
+6. All dates → YYYY-MM-DD format
+7. All times → HH:MM 24-hour format (14:30 not 2:30 PM)
+8. exam_name → use the SHORT official name only (e.g. "KCET 2026" not the full Kannada+English title)
+9. reporting_time → candidate arrival time (different from exam start time). Use null if not found.
+
+Return ONLY this exact JSON structure, nothing else:
 
 {
-    "exam_name": "full official name of the exam as printed on the admit card",
-    "exam_date": "date in YYYY-MM-DD format",
-    "exam_start_time": "time when exam paper STARTS in HH:MM 24hr format, or null if not found",
-    "exam_end_time": "time when exam ENDS in HH:MM 24hr format, or null if not found",
-    "reporting_time": "candidate arrival/reporting time in HH:MM 24hr format, or null if not found",
-    "center_name": "full name of the exam center or venue",
-    "center_address": "complete postal address of the exam center",
+    "exam_name": "short official exam name like KCET 2026 or JEE Main 2026",
+    "candidate_name": "full name of student",
+    "roll_number": "roll number or registration number or hall ticket number",
+    "center_name": "full name of exam center",
+    "center_address": "complete address of exam center",
     "center_city": "city name only",
-    "roll_number": "roll number, registration number, or hall ticket number",
-    "candidate_name": "full name of the student/candidate",
-    "instructions": "any important exam day instructions as a single string",
+    "reporting_time": "candidate arrival time HH:MM or null",
+    "sessions": [
+        {
+            "session_number": 1,
+            "subject_name": "Physics or Paper 1 or GS Paper I or null",
+            "exam_date": "YYYY-MM-DD",
+            "start_time": "HH:MM",
+            "end_time": "HH:MM or null"
+        },
+        {
+            "session_number": 2,
+            "subject_name": "Chemistry or Paper 2 or null",
+            "exam_date": "YYYY-MM-DD",
+            "start_time": "HH:MM",
+            "end_time": "HH:MM or null"
+        }
+    ],
+    "instructions": "important exam day instructions as single string or null",
     "raw_text": "all visible text from the image"
 }
 
 STRICT RULES:
-- Return ONLY the JSON object, nothing else
+- Return ONLY the JSON object
 - No markdown, no backticks, no explanation before or after
-- If a field cannot be found, use null
-- All dates must be in YYYY-MM-DD format
-- All times must be in HH:MM 24-hour format (e.g. 14:30 not 2:30 PM)
-- Be extremely careful with exam timings — wrong times can cause students to miss exams
+- sessions array must always have at least 1 item
+- Never merge multiple sessions into one
+- If only one session exists, sessions array has exactly 1 item
+- null for missing fields, never empty string
 """
 
         response = client.chat.completions.create(
@@ -115,44 +156,63 @@ STRICT RULES:
                     ],
                 }
             ],
-            max_tokens=2000,
+            max_tokens=3000,
             temperature=0.1,
-            # response_format removed — causes issues with non-ASCII (Kannada/Hindi) text
+            # NO response_format here — it breaks with Kannada/regional text
         )
 
         raw_text = response.choices[0].message.content.strip()
-        logger.info(f"Groq raw response (first 300): {raw_text[:300]}")
+        logger.info(f"Groq raw response (first 500): {raw_text[:500]}")
 
+        # ── CLEAN JSON ──
+        # Sometimes Groq wraps response in ```json ... ```
+        # Strip those if present
         if raw_text.startswith("```"):
-            raw_text = raw_text.split("```")[1]
-            if raw_text.startswith("json"):
-                raw_text = raw_text[4:]
-            raw_text = raw_text.strip()
+            lines = raw_text.split("\n")
+            lines = [l for l in lines if not l.startswith("```")]
+            raw_text = "\n".join(lines).strip()
 
         parsed = json.loads(raw_text)
 
-        # ── FIELD MIGRATION ──
-        exam_start = parsed.get("exam_start_time")
-        exam_end = parsed.get("exam_end_time")
-        arrival_time = parsed.get("reporting_time")
-
-        parsed["reporting_time"] = exam_start        # DB column = exam start time
-        parsed["gate_closing_time"] = exam_end       # DB column = exam end time
-        parsed["candidate_arrival_time"] = arrival_time
+        # ── VALIDATE SESSIONS ──
+        sessions = parsed.get("sessions", [])
+        if not sessions:
+            # Fallback: if AI didn't return sessions array
+            # Build one session from old-style fields
+            logger.warning("No sessions array found — building fallback single session")
+            sessions = [{
+                "session_number": 1,
+                "subject_name": None,
+                "exam_date": parsed.get("exam_date"),
+                "start_time": parsed.get("exam_start_time") or parsed.get("reporting_time"),
+                "end_time": parsed.get("exam_end_time") or parsed.get("gate_closing_time"),
+            }]
+            parsed["sessions"] = sessions
 
         logger.info(
-            f"Admit card parsed: {parsed.get('exam_name')} | "
-            f"Start: {exam_start} | End: {exam_end} | Arrive by: {arrival_time}"
+            f"Parsed: {parsed.get('exam_name')} | "
+            f"{len(sessions)} session(s) | "
+            f"Center: {parsed.get('center_city')}"
         )
+
+        for s in sessions:
+            logger.info(
+                f"  Session {s.get('session_number')}: "
+                f"{s.get('subject_name')} | "
+                f"{s.get('exam_date')} | "
+                f"{s.get('start_time')} → {s.get('end_time')}"
+            )
 
         return parsed
 
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON parse failed: {e}\nRaw: {raw_text[:300]}")
+        raise InternalServerException(
+            "Could not read admit card. Please try again or use a clearer image."
+        )
+
     except InternalServerException:
         raise
-
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON from Groq: {e}")
-        raise InternalServerException("AI returned invalid response. Please try again.")
 
     except Exception as e:
         logger.error(f"Groq parsing failed: {e}")
