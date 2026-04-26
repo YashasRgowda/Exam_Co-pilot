@@ -15,18 +15,73 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import useExamStore from '../../../store/examStore';
 import checklistService from '../../../services/checklistService';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useRef } from 'react';
 
 export default function ChecklistScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
-    const { currentChecklist, fetchChecklist, toggleChecklistItem } = useExamStore();
+    const {
+        currentChecklist,
+        fetchChecklist,
+        toggleChecklistItem,
+        fetchExamDashboard,
+        currentExam,
+    } = useExamStore();
+
     const [adding, setAdding] = useState(false);
     const [newItem, setNewItem] = useState('');
     const [loading, setLoading] = useState(false);
     const [acknowledged, setAcknowledged] = useState(false);
 
+    const checkAndResetForNewSession = async () => {
+        try {
+            await fetchExamDashboard(id);
+
+            const examStore = useExamStore.getState();
+            const nextSession = examStore.currentExam?.next_session;
+
+            if (!nextSession) {
+                // No next session — still fetch checklist
+                await fetchChecklist(id);
+                return;
+            }
+
+            const currentSessionKey = `${nextSession.exam_date}_${nextSession.session_number}`;
+            const storedKey = await AsyncStorage.getItem(`last_packed_session_${id}`);
+
+            if (storedKey && storedKey !== currentSessionKey) {
+                // New session detected — reset all checkboxes in DB
+                const items = examStore.currentChecklist;
+                const checkedItems = items.filter(item => item.is_checked);
+
+                // Reset all checked items
+                await Promise.all(
+                    checkedItems.map(item => checklistService.updateItem(item.id, false))
+                );
+
+                await AsyncStorage.removeItem(`acknowledged_${id}`);
+                setAcknowledged(false);
+                console.log(`Checklist reset: ${storedKey} → ${currentSessionKey}`);
+            }
+
+            // Always update stored key
+            await AsyncStorage.setItem(`last_packed_session_${id}`, currentSessionKey);
+
+        } catch (e) {
+            console.log('Session reset check failed:', e);
+        } finally {
+            // Always fetch fresh checklist at the end — no race condition
+            await fetchChecklist(id);
+        }
+    };
+
     useEffect(() => {
-        if (id) fetchChecklist(id);
+        if (id) {
+            // checkAndResetForNewSession already calls fetchChecklist internally
+            // so we don't need to call it separately
+            checkAndResetForNewSession();
+        }
     }, [id]);
 
     useEffect(() => {
@@ -38,6 +93,14 @@ export default function ChecklistScreen() {
         };
         if (id) load();
     }, [id]);
+
+    // Refresh checklist when screen comes back into focus
+    // This handles the case where user checks items on exam detail screen
+    useFocusEffect(
+        useCallback(() => {
+            if (id) fetchChecklist(id);
+        }, [id])
+    );
 
     const checkedCount = currentChecklist.filter(i => i.is_checked).length;
     const totalCount = currentChecklist.length;
@@ -71,6 +134,8 @@ export default function ChecklistScreen() {
 
     const progressColor = allDone ? '#00E676' : progressPercent > 66 ? '#FFB800' : '#C41E3A';
 
+
+
     return (
         <>
             <StatusBar barStyle="light-content" backgroundColor="#06060E" />
@@ -81,14 +146,29 @@ export default function ChecklistScreen() {
                     <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                         <Ionicons name="arrow-back" size={16} color="#E0E0EC" />
                     </TouchableOpacity>
+                    {currentExam?.next_session?.subject_name && (
+                        <View style={styles.sessionPill}>
+                            <Text style={styles.sessionPillText}>
+                                {currentExam.next_session.subject_name}
+                            </Text>
+                        </View>
+                    )}
                 </View>
 
                 {/* ── PROGRESS HERO ── */}
                 <View style={styles.heroWrap}>
                     <Text style={styles.heroTitle}>Exam Checklist</Text>
+                    {currentExam?.next_session && (
+                        <Text style={styles.heroSubtitle}>
+                            {currentExam.next_session.subject_name
+                                ? `For ${currentExam.next_session.subject_name} · `
+                                : ''}
+                            {currentExam.next_session.start_time?.slice(0, 5)} →{' '}
+                            {currentExam.next_session.end_time?.slice(0, 5)}
+                        </Text>
+                    )}
 
                     <View style={styles.heroCard}>
-                        {/* Big fraction */}
                         <View style={styles.heroLeft}>
                             <Text style={[styles.heroFracTop, { color: progressColor }]}>
                                 {checkedCount}
@@ -100,15 +180,12 @@ export default function ChecklistScreen() {
 
                         <View style={styles.heroCardDivider} />
 
-                        {/* Right — status + bar */}
                         <View style={styles.heroRight}>
                             <Text style={styles.heroStatusText}>
                                 {allDone
                                     ? 'You\'re fully packed!'
                                     : `${totalCount - checkedCount} item${totalCount - checkedCount !== 1 ? 's' : ''} left to pack`}
                             </Text>
-
-                            {/* Progress bar */}
                             <View style={styles.heroBar}>
                                 <View style={[styles.heroBarFill, {
                                     width: `${progressPercent}%`,
@@ -118,7 +195,6 @@ export default function ChecklistScreen() {
                             <Text style={[styles.heroPercent, { color: progressColor }]}>
                                 {Math.round(progressPercent)}% complete
                             </Text>
-
                             {allDone && (
                                 <View style={styles.readyChip}>
                                     <Ionicons name="checkmark-circle" size={12} color="#00E676" />
@@ -211,8 +287,6 @@ export default function ChecklistScreen() {
                     <View style={styles.section}>
                         <Text style={styles.sectionLabel}>EXAM INSTRUCTIONS</Text>
                         <View style={styles.instrCard}>
-
-                            {/* Do not bring */}
                             <View style={styles.instrGroup}>
                                 <View style={styles.instrGroupHead}>
                                     <View style={[styles.instrDot, { backgroundColor: '#C41E3A' }]} />
@@ -235,7 +309,6 @@ export default function ChecklistScreen() {
 
                             <View style={styles.instrDiv} />
 
-                            {/* Remember */}
                             <View style={styles.instrGroup}>
                                 <View style={styles.instrGroupHead}>
                                     <View style={[styles.instrDot, { backgroundColor: '#00E676' }]} />
@@ -298,10 +371,19 @@ const styles = StyleSheet.create({
         backgroundColor: '#0F0F1E', borderWidth: 1, borderColor: '#1A1A2E',
         justifyContent: 'center', alignItems: 'center',
     },
+    sessionPill: {
+        backgroundColor: 'rgba(196,30,58,0.1)',
+        borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5,
+        borderWidth: 1, borderColor: 'rgba(196,30,58,0.2)',
+    },
+    sessionPillText: {
+        fontSize: 11, fontWeight: '700', color: '#C41E3A', letterSpacing: 0.5,
+    },
 
-    // ── HERO ──
-    heroWrap: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20, gap: 14 },
+    heroWrap: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20, gap: 6 },
     heroTitle: { fontSize: 22, fontWeight: '800', color: '#F5F5FA', letterSpacing: -0.5 },
+    heroSubtitle: { fontSize: 12, color: '#52526A', fontWeight: '500', marginBottom: 8 },
+
     heroCard: {
         flexDirection: 'row', backgroundColor: '#0C0C1A',
         borderRadius: 18, borderWidth: 1, borderColor: '#1A1A2E',
@@ -309,8 +391,7 @@ const styles = StyleSheet.create({
     },
     heroLeft: {
         paddingHorizontal: 20, paddingVertical: 18,
-        justifyContent: 'center', alignItems: 'center', gap: 4,
-        minWidth: 90,
+        justifyContent: 'center', alignItems: 'center', gap: 4, minWidth: 90,
     },
     heroFracTop: { fontSize: 44, fontWeight: '900', letterSpacing: -2, lineHeight: 48 },
     heroFracLine: { width: 30, height: 1.5, borderRadius: 1 },
@@ -323,19 +404,16 @@ const styles = StyleSheet.create({
     heroBarFill: { height: 4, borderRadius: 2 },
     heroPercent: { fontSize: 11, fontWeight: '700' },
     readyChip: {
-        flexDirection: 'row', alignItems: 'center', gap: 5,
-        alignSelf: 'flex-start',
+        flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start',
         backgroundColor: 'rgba(0,230,118,0.1)', borderRadius: 6,
         paddingHorizontal: 8, paddingVertical: 4,
         borderWidth: 1, borderColor: 'rgba(0,230,118,0.2)',
     },
     readyChipText: { fontSize: 11, fontWeight: '700', color: '#00E676' },
 
-    // ── SECTION ──
     section: { paddingHorizontal: 20, marginBottom: 20 },
     sectionLabel: { fontSize: 9, fontWeight: '700', color: '#38384A', letterSpacing: 2.5, marginBottom: 10 },
 
-    // ── ITEMS ──
     itemsCard: {
         backgroundColor: '#0C0C1A', borderRadius: 14,
         borderWidth: 1, borderColor: '#1A1A2E', overflow: 'hidden',
@@ -358,7 +436,6 @@ const styles = StyleSheet.create({
         backgroundColor: '#141428', justifyContent: 'center', alignItems: 'center',
     },
 
-    // ── ADD ──
     addTrigger: {
         flexDirection: 'row', alignItems: 'center', gap: 12,
         backgroundColor: '#0C0C1A', borderRadius: 13,
@@ -388,7 +465,6 @@ const styles = StyleSheet.create({
     },
     addConfirmText: { fontSize: 12, fontWeight: '700', color: '#fff' },
 
-    // ── INSTRUCTIONS ──
     instrCard: {
         backgroundColor: '#0C0C1A', borderRadius: 14,
         borderWidth: 1, borderColor: '#1A1A2E', overflow: 'hidden',
@@ -402,7 +478,6 @@ const styles = StyleSheet.create({
     instrBullet: { fontSize: 11, fontWeight: '700', width: 14, marginTop: 2 },
     instrText: { flex: 1, fontSize: 12, color: '#52526A', fontWeight: '500', lineHeight: 18 },
 
-    // ── ACK ──
     ackBtn: {
         flexDirection: 'row', alignItems: 'center', gap: 14,
         backgroundColor: '#0C0C1A', borderRadius: 14,

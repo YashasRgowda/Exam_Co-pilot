@@ -18,6 +18,10 @@ import useExamStore from '../../store/examStore';
 import colors from '../../constants/colors';
 import typography from '../../constants/typography';
 import { formatDate } from '../../utils/formatters';
+import { AppState } from 'react-native';
+import { useRef } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
 
 const { width } = Dimensions.get('window');
 const TILE_SIZE = (width - 20 * 2 - 10) / 2;
@@ -54,6 +58,29 @@ export default function HomeScreen() {
         if (days <= 7) return '#FFB800';
         return '#00E676';
     };
+
+    const appState = useRef(AppState.currentState);
+
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', nextAppState => {
+            if (
+                appState.current.match(/inactive|background/) &&
+                nextAppState === 'active'
+            ) {
+                fetchDashboard();
+            }
+            appState.current = nextAppState;
+        });
+        return () => subscription.remove();
+    }, []);
+
+    // Refresh dashboard every time home tab comes into focus
+    // This ensures next_session data is always current
+    useFocusEffect(
+        useCallback(() => {
+            fetchDashboard();
+        }, [])
+    );
 
     return (
         <>
@@ -125,8 +152,9 @@ export default function HomeScreen() {
                                 <View style={styles.heroStatDivider} />
                                 <View style={styles.heroStat}>
                                     <Text style={styles.heroStatMed}>
-                                        {nextExam.exam_date
-                                            ? new Date(nextExam.exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                                        {(nextExam.next_session?.exam_date || nextExam.exam_date)
+                                            ? new Date(nextExam.next_session?.exam_date || nextExam.exam_date)
+                                                .toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
                                             : '—'}
                                     </Text>
                                     <Text style={styles.heroStatLabel}>DATE</Text>
@@ -134,14 +162,14 @@ export default function HomeScreen() {
                                 <View style={styles.heroStatDivider} />
                                 <View style={styles.heroStat}>
                                     <Text style={styles.heroStatMed}>
-                                        {nextExam.reporting_time?.slice(0, 5) ?? '—'}
+                                        {nextExam.next_session?.start_time?.slice(0, 5) ?? '—'}
                                     </Text>
                                     <Text style={styles.heroStatLabel}>START</Text>
                                 </View>
                                 <View style={styles.heroStatDivider} />
                                 <View style={styles.heroStat}>
                                     <Text style={styles.heroStatMed}>
-                                        {nextExam.gate_closing_time?.slice(0, 5) ?? '—'}
+                                        {nextExam.next_session?.end_time?.slice(0, 5) ?? '—'}
                                     </Text>
                                     <Text style={styles.heroStatLabel}>END</Text>
                                 </View>

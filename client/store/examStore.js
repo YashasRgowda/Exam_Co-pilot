@@ -108,6 +108,8 @@ const useExamStore = create((set, get) => ({
             currentExam: {
                 ...response.exam,
                 days_remaining: response.days_remaining ?? computedDays,
+                sessions: response.sessions || [],
+                next_session: response.next_session || null,
             },
             currentChecklist: response.checklist,
             isOffline: false,
